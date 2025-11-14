@@ -3,7 +3,6 @@
 
 /draft
 /checkpoints
-/data
 /logs
 /mae-cxr
 /wandb
@@ -13,3 +12,22 @@
 /worktable.ipynb
 
 */__pycache__/
+
+/covid_cxr_ssl_eval
+/nih_cxr_ssl_eval
+
+*sh
+*.ipynb_checkpoints
+*.pyc
+*.pkl
+*.pth
+*.ckpt
+*.log
+*.csv
+*.sqlite
+*.tar
+*.gz
+*.zip
+*.egg-info
+.vscode/
+.env

@@ -6,7 +6,7 @@ from torchvision import transforms as T
 import pandas as pd
 from torch.utils.data import DataLoader
 
-class CheXpertDataModule(pl.LightningDataModule):
+class CXRDataModule(pl.LightningDataModule):
     def __init__(self, train_csv, val_csv, root_dir, test_csv=None,
                  batch_size=64, num_workers=4, image_size=224, task="MAE"):
         super().__init__()
@@ -78,6 +78,42 @@ class CheXpertDataModule(pl.LightningDataModule):
                 labels=["Label"],
                 path_index="Path"
             )
+        elif self.task == "NIH":
+            self.train_dataset = ChestXrayDataset(
+                df=self.train_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=[
+                    'Hernia', 'Pneumothorax', 'Nodule', 'Edema', 'Effusion', 
+                    'Pleural_Thickening', 'Cardiomegaly', 'Mass', 'Fibrosis', 
+                    'Consolidation', 'Pneumonia', 'Infiltration', 'Emphysema', 'Atelectasis'
+                ],
+                path_index="Image Index"
+            )
+            self.val_dataset = ChestXrayDataset(
+                df=self.val_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=[
+                    'Hernia', 'Pneumothorax', 'Nodule', 'Edema', 'Effusion',
+                    'Pleural_Thickening', 'Cardiomegaly', 'Mass', 'Fibrosis', 
+                    'Consolidation', 'Pneumonia', 'Infiltration', 'Emphysema', 'Atelectasis'
+                ],
+                path_index="Image Index"
+            )            
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=[
+                   'Hernia', 'Pneumothorax', 'Nodule', 'Edema', 'Effusion', 
+                   'Pleural_Thickening', 'Cardiomegaly', 'Mass', 'Fibrosis', 
+                   'Consolidation', 'Pneumonia', 'Infiltration', 'Emphysema', 'Atelectasis'
+                ],
+                path_index="Image Index"
+            )
+        else:
+            raise ValueError(f"Unsupported task: {self.task}")
 
     def train_dataloader(self):
         return DataLoader(

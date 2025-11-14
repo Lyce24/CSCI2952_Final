@@ -1,7 +1,7 @@
 import torch
 
 # --- Existing code ---
-from Modules.data_modules import CheXpertDataModule
+from Modules.data_modules import CXRDataModule
 from Modules.lightning_modules import MAELightningModule
 
 from pytorch_lightning.loggers import WandbLogger
@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 import argparse
 
 def main(args):
-    data_module = CheXpertDataModule(
+    data_module = CXRDataModule(
         train_csv=args.train_csv,
         val_csv=args.val_csv,
         root_dir=args.root_dir,
@@ -58,23 +58,23 @@ def main(args):
         if torch.is_tensor(out):
             print("Output shape:", out.shape)
 
-    # logger = WandbLogger(project=args.wandb_project)
+    logger = WandbLogger(project=args.wandb_project)
 
-    # trainer = pl.Trainer(
-    #     max_epochs=args.max_epochs,
-    #     precision="16-mixed",   # AMP
-    #     logger=logger,
-    #     gradient_clip_val=0.0,
-    #     deterministic=False,
-    #     check_val_every_n_epoch=1,
-    #     accelerator="gpu",
-    #     devices=args.devices,
-    #     num_nodes=args.num_nodes,
-    #     strategy="auto",
-    # )
+    trainer = pl.Trainer(
+        max_epochs=args.max_epochs,
+        precision="16-mixed",   # AMP
+        logger=logger,
+        gradient_clip_val=0.0,
+        deterministic=False,
+        check_val_every_n_epoch=1,
+        accelerator="gpu",
+        devices=args.devices,
+        num_nodes=args.num_nodes,
+        strategy="auto",
+    )
 
-    # trainer.fit(model, datamodule=data_module)
-    # trainer.save_checkpoint(args.checkpoint_path)
+    trainer.fit(model, datamodule=data_module)
+    trainer.save_checkpoint(args.checkpoint_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
