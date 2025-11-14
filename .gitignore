@@ -11,3 +11,5 @@
 /__pycache__
 
 /worktable.ipynb
+
+*/__pycache__/

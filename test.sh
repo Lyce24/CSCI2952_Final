@@ -30,4 +30,4 @@ python -V
 which python
 
 # launch two ranks with the absolute interpreter
-srun --export=ALL python mae_test.py
+srun --export=ALL python Stage1_MAE.py
