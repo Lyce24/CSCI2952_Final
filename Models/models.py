@@ -16,12 +16,7 @@ class CXRModel(nn.Module):
         if vit_model is not None:
             backbone = vit_model
         else:
-            # num_classes=0 => timm builds a feature-only model (no classifier)
-            backbone = timm.create_model(
-                backbone_name,
-                num_classes=0,
-                pretrained=False,  # we'll load weights manually if provided
-            )
+            raise ValueError("vit_model must be provided.")
 
         # If the backbone still has a classifier head, strip/reset it
         if hasattr(backbone, "reset_classifier"):
@@ -57,6 +52,6 @@ class CXRModel(nn.Module):
 
     def forward(self, x):
         # For timm ViT with num_classes=0, backbone(x) returns pooled features [B, C]
-        feats = self.backbone.forward_features(x)
+        feats = self.backbone(x)
         logits = self.head(feats)
         return logits

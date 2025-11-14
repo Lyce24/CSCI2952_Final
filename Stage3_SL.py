@@ -12,6 +12,8 @@ import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
+import timm
+
 def main(args):
     data_module = CXRDataModule(
         train_csv=args.train_csv,
@@ -33,8 +35,14 @@ def main(args):
     print(f"Number of validation batches: {len(val_loader)}")
     print(f"Number of test batches: {len(test_loader)}")
 
-    ckpt = torch.load(args.ckpt_path, map_location="cpu", weights_only=False)
-    vit_model = get_vit_from_mae(ckpt, global_pool=False)
+    if args.mode == "imagenet":
+        # get the ViT model with ImageNet weights from timm
+        vit_model = timm.create_model('vit_base_patch16_224', pretrained=True, num_classes=0)
+    elif args.mode == "mae":
+        ckpt = torch.load(args.ckpt_path, map_location="cpu", weights_only=False)
+        vit_model = get_vit_from_mae(ckpt, global_pool=False)
+    else:
+        raise NotImplementedError(f"Mode {args.mode} not implemented.")
 
     model = ClassificationLightningModule(
         model=vit_model,
@@ -117,6 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("--devices", type=int, default=1)
     parser.add_argument("--num_nodes", type=int, default=1)
     parser.add_argument("--pos_weight", type=float, default=None)
+    parser.add_argument("--mode", type=str, default="mae", choices=["mae", "imagenet"])
     
     parser.add_argument("--task", type=str, default="COVID")
     parser.add_argument("--train_csv", type=str, default="./data/covid_train_split.csv")
