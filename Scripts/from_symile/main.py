@@ -33,11 +33,7 @@ def get_data_module(args):
     """
     Returns the appropriate DataModule based on the experiment.
     """
-    if args.experiment == "binary_xor":
-        dm = datasets.BinaryXORDataModule
-    elif args.experiment == "symile_m3":
-        dm = datasets.SymileM3DataModule
-    elif args.experiment == "symile_mimic":
+    if args.experiment in ["symile_mimic", "mmft_mimic"]:
         dm = datasets.SymileMIMICDataModule
     else:
         raise ValueError("Unsupported experiment name specified.")
@@ -49,12 +45,9 @@ def get_model_module(args):
     """
     Imports and returns the appropriate model module based on the experiment.
     """
-    if args.experiment == "binary_xor":
-        module = importlib.import_module("models.binary_xor_model")
-        ModelClass = getattr(module, "BinaryXORModel")
-    elif args.experiment == "symile_m3":
-        module = importlib.import_module("models.symile_m3_model")
-        ModelClass = getattr(module, "SymileM3Model")
+    if args.experiment == "mmft_mimic":
+        module = importlib.import_module("models.mmft_mimic_model")
+        ModelClass = getattr(module, "MMFTModel")
     elif args.experiment == "symile_mimic":
         module = importlib.import_module("models.symile_mimic_model")
         ModelClass = getattr(module, "SymileMIMICModel")
@@ -184,9 +177,7 @@ if __name__ == '__main__':
     if args.use_seed:
         seed_everything(args.seed, workers=True)
 
-    if args.experiment == "binary_xor":
-        binary_xor_main(args)
-    elif args.experiment in ["symile_m3", "symile_mimic"]:
+    if args.experiment in ["mmft_mimic", "symile_mimic"]:
         main(args)
     else:
         raise ValueError("Unsupported experiment name specified.")

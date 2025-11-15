@@ -5,7 +5,7 @@ import random
 import time
 import sys
 
-from args import parse_args_main
+
 from lightning.pytorch import Trainer, seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -17,6 +17,7 @@ CUSTOM_PATH = os.path.join(PROJECT_ROOT, "Scripts", "from_symile")
 if CUSTOM_PATH not in sys.path:
     sys.path.insert(0, CUSTOM_PATH)
 
+from args import parse_args_main
 import importlib
 datasets = importlib.import_module("datasets")
 
@@ -38,7 +39,7 @@ def get_data_module(args):
     """
     Returns the appropriate DataModule based on the experiment.
     """
-    if args.experiment == "symile_mimic":
+    if args.experiment in ["symile_mimic", "mmft_mimic"]:
         dm = datasets.SymileMIMICDataModule
     else:
         raise ValueError("Unsupported experiment name specified.")
@@ -50,7 +51,10 @@ def get_model_module(args):
     """
     Imports and returns the appropriate model module based on the experiment.
     """
-    if args.experiment == "symile_mimic":
+    if args.experiment == "mmft_mimic":
+        module = importlib.import_module("models.mmft_mimic_model")
+        ModelClass = getattr(module, "MMFTModel")
+    elif args.experiment == "symile_mimic":
         module = importlib.import_module("models.symile_mimic_model")
         ModelClass = getattr(module, "SymileMIMICModel")
     else:
@@ -93,7 +97,7 @@ def main(args):
 
     model = get_model_module(args)
 
-    if args.ckpt_path == "None":
+    if args.ckpt_path == None:
         print("Training model from scratch!")
         trainer.fit(model, datamodule=dm)
     else:
@@ -113,7 +117,7 @@ if __name__ == '__main__':
     if args.use_seed:
         seed_everything(args.seed, workers=True)
 
-    if args.experiment in ["symile_m3", "symile_mimic"]:
+    if args.experiment in ["mmft_mimic", "symile_mimic"]:
         main(args)
     else:
         raise ValueError("Unsupported experiment name specified.")

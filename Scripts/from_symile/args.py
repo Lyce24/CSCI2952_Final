@@ -34,7 +34,7 @@ def parse_args_main():
     # first parse only the --experiment argument
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--experiment", type=str,
-                        choices=["binary_xor", "symile_m3", "symile_mimic"],
+                        choices=["mmft_mimic", "symile_mimic"],
                         required=True,
                         help="Which experiment is being run.")
     args, remaining_argv = parser.parse_known_args()
@@ -104,61 +104,17 @@ def parse_args_main():
                               when debugging. 1.0 is default used by Trainer. \
                               Set to 0.1 to check 10% of dataset.")
 
-    ### BINARY XOR ARGS ###
-    if args.experiment == "binary_xor":
-        parser.add_argument("--train_n", type=int,
-                            help="Number of samples (a, b, c) in train dataset.")
-        parser.add_argument("--val_n", type=int,
-                            help="Number of samples (a, b, c) in val dataset.")
-        parser.add_argument("--test_n", type=int,
-                            help="Number of samples (a, b, c) in test dataset.")
-        parser.add_argument("--d_v", type=int,
-                            help="Dimensionality of dataset vectors.")
-        parser.add_argument("--bootstrap", type=str_to_bool, default=False,
-                        help="Whether to bootstrap test results.")
-        parser.add_argument("--bootstrap_n", type=int, default=10,
-                        help="Number of bootstrap samples.")
-    ### SYMILE-M3 ARGS ###
-    elif args.experiment == "symile_m3":
-        # data args
-        parser.add_argument("--train_csv", type=Path,
-                                default=Path("train.csv"),
-                                help="Filename for train csv.")
-        parser.add_argument("--val_csv", type=Path,
-                                default=Path("val.csv"),
-                                help="Filename for val csv.")
-        parser.add_argument("--test_csv", type=Path,
-                                default=Path("test.csv"),
-                                help="Filename for test csv.")
-        parser.add_argument("--translations_path", type=Path,
-                                help="Path to json file with ImageNet class names, \
-                                      synset ids, and translations.")
-        parser.add_argument("--num_langs", type=int,
-                                help="Number of languages in generated text.")
-        parser.add_argument("--missingness", type=str_to_bool, default=False,
-                                help="Whether to train with missingness.")
-        parser.add_argument("--missingness_prob", type=float,
-                                help="Probability with which a given modality is missing.")
-        # model args
-        parser.add_argument("--audio_model_id", type=str,
-                            help="Hugging Face model id for audio encoder.")
-        parser.add_argument("--image_model_id", type=str,
-                            help="Hugging Face model id for image encoder.")
-        parser.add_argument("--text_model_id", type=str,
-                            help="Hugging Face model id for text encoder.")
-        parser.add_argument("--text_embedding", type=str,
-                                choices = ["eos", "bos"], default="eos",
-                                help="Whether to use text encoder BOS or EOS embedding \
-                                    as input to projection head.")
-        parser.add_argument("--metadata_filename", type=Path,
-                                default=Path("metadata.json"),
-                                help="Path to json file with metadata for all encoders.")
     ### SYMILE-MIMIC ARGS ###
-    elif args.experiment == "symile_mimic":
+    if args.experiment == "symile_mimic":
         parser.add_argument("--pretrained", type=str_to_bool, default=False,
                             help="Whether to pretrained encoders for CXR and ECG.")
         parser.add_argument("--cxr_weights_path", type=Path, default=None,
                         help="Optional path to custom weights for the CXR ViT.")
+        
+    ### MMFT-MIMIC ARGS ###
+    if args.experiment == "mmft_mimic":
+        parser.add_argument("--pretrained", type=str_to_bool, default=False,
+                            help="Whether to pretrained encoders for CXR and ECG.")
 
     all_args = parser.parse_args(remaining_argv)
 
@@ -172,7 +128,7 @@ def parse_args_test():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--experiment", type=str,
-                        choices = ["symile_m3", "symile_mimic"],
+                        choices = ["mmft_mimic", "symile_mimic"],
                         help="Which experiment is being run.")
 
     ### ARGUMENTS COMMON TO BOTH EXPERIMENTS ###
@@ -205,7 +161,7 @@ def parse_args_collect_tuning_results():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--experiment", type=str,
-                        choices = ["symile_m3", "symile_mimic"], required=True,
+                        choices = ["mmft_mimic", "symile_mimic"], required=True,
                         help="Which experiment is being run.")
     parser.add_argument("--results_pt", type=Path,
                         help="Path to yaml file with hyperparameter tuning results.")

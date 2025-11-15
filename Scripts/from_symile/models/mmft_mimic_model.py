@@ -13,7 +13,7 @@ from torchvision.transforms import Compose
 from torch.distributions.uniform import Uniform
 import random
 import math
-import simsiam
+from . import simsiam
 
 import os
 from collections import OrderedDict
@@ -59,7 +59,7 @@ class CXREncoder(nn.Module):
         """
         super().__init__()
 
-        self.transform = ToSimSiam()
+        self.transform = simsiam.ToSimSiam()
 
         if args.pretrained:
             self.vit = timm.create_model(
@@ -87,7 +87,10 @@ class CXREncoder(nn.Module):
             missing, unexpected = self.vit.load_state_dict(sd, strict=False)
             print(f"[timm ViT] missing={len(missing)}, unexpected={len(unexpected)}")
 
-    def apply_cxr_aug(self, x, transform=self.transform):
+    def apply_cxr_aug(self, x, transform=None):
+        if transform is None:
+            transform = self.transform
+            
         N = x.shape[0]
 
         # apply SimSiam augmentation per image tensor
@@ -240,8 +243,8 @@ class ECGEncoder(nn.Module):
         """
         v1 = self.apply_ecg_aug(x)
         v2 = self.apply_ecg_aug(x)
-        z1 = self.resnet(x1)
-        z2 = self.resnet(x2)
+        z1 = self.resnet(v1)
+        z2 = self.resnet(v2)
         return self.layer_norm(z1), self.layer_norm(z2)
 
 # From SCARF by Google Research team in 2021
@@ -252,9 +255,14 @@ class LabSCARFTransform:
     def __call__(self, x):
         N, _ = x.size()
 
-        features_low = torch.min(x, dim=0).values()
-        features_high = torch.max(x, dim=0).values()
-        marginals = Uniform(torch.Tensor(features_low), torch.Tensor(features_high))
+        features_low = x.min(dim=0).values
+        features_high = x.max(dim=0).values
+
+        eps = 1e-6
+        same_mask = (features_low >= features_high)
+        features_high = torch.where(same_mask, features_low + eps, features_high)
+        marginals = Uniform(features_low, features_high)
+
 
         # 1: create a mask of size (batch size, m) where for each sample we set the jth column to True at random, such that corruption_len / m = corruption_rate
         # 2: create a random tensor of size (batch size, m) drawn from the uniform distribution defined by the min, max values of the training set
@@ -336,22 +344,22 @@ class MMFTModel(pl.LightningModule):
         self.labs_encoder = LabsEncoder(self.args)
 
         self.cxr_attends_ecg = nn.MultiheadAttention(
-            args.d, args.num_heads, batch_first=True
+            self.args.d, self.args.num_heads, batch_first=True
         )
         # CXR attends to Labs
         self.cxr_attends_lab = nn.MultiheadAttention(
-            args.d, args.num_heads, batch_first=True
+            self.args.d, self.args.num_heads, batch_first=True
         )
         # ECG attends to Labs
         self.ecg_attends_lab = nn.MultiheadAttention(
-            args.d, args.num_heads, batch_first=True
+            self.args.d, self.args.num_heads, batch_first=True
         )
         
         # Fusion MLP projection after concatenation
         self.fusion_proj = nn.Sequential(
-            nn.Linear(args.d * 3, 1024),
+            nn.Linear(self.args.d * 3, 1024),
             nn.ReLU(),
-            nn.Linear(1024, args.d)
+            nn.Linear(1024, self.args.d)
         )
 
         # temperature parameter is learned as done by CLIP:
@@ -464,7 +472,7 @@ class MMFTModel(pl.LightningModule):
         """
         z1, z2, logit_scale_exp = self(batch)
 
-        loss = self.loss_fn(z1, z2, logit_scale_exp, self.args.negative_sampling)
+        loss = self.loss_fn(z1, z2, logit_scale_exp)
 
         # tracking to help evaluate optimization (given total correlation lower bound established in paper)
         log_n = np.log(len(batch[0]))
@@ -525,6 +533,11 @@ class MMFTModel(pl.LightningModule):
 
         with open(self.args.save_dir / "run_info.json", "w") as f:
             json.dump(self.run_info, f, indent=4, cls=PathToStrEncoder)
+
+        # --- export ViT weights ---
+        if self.trainer.is_global_zero: 
+            vit_sd = self.cxr_encoder.vit.state_dict()
+            torch.save(vit_sd, self.args.save_dir / "cxr_vit_final_mmft.pt")
 
     def test_step(self, batch, batch_idx):
         pass
@@ -1040,8 +1053,5 @@ class MMFTModel(pl.LightningModule):
 #             print("\nWARNING: Multiple indices with max value. Random index selected.\n")
 
 #         return retrieval_acc
-
-
-
 
 
