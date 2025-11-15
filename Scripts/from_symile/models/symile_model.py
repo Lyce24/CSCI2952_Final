@@ -8,6 +8,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import models
 import timm
+
+from torchvision.transforms import Compose
+import random
+import math
 import simsiam
 
 import os
@@ -82,7 +86,7 @@ class CXREncoder(nn.Module):
             missing, unexpected = self.vit.load_state_dict(sd, strict=False)
             print(f"[timm ViT] missing={len(missing)}, unexpected={len(unexpected)}")
 
-    def apply_ss_aug(self, x, transform=self.transform):
+    def apply_cxr_aug(self, x, transform=self.transform):
         N = x.shape[0]
         C = x.shape[1]
         H = x.shape[2]
@@ -105,14 +109,60 @@ class CXREncoder(nn.Module):
         if x.shape[-2:] != (224, 224):
             x = F.interpolate(x, size=(224, 224), mode="bilinear", align_corners=False)
 
-        v1 = self.apply_ss_aug(x, self.transform)
-        v2 = self.apply_ss_aug(x, self.transform)
+        v1 = self.apply_cxr_aug(x)
+        v2 = self.apply_cxr_aug(x)
         feats1 = self.vit(v1)            # (B, 768) because heads=Identity()
         feats2 = self.vit(v2)
         z1 = self.proj(feats1)           # (B, d)
         z2 = self.proj(feats2)
-        return self.layer_norm(z1), self.layer_norm(z1)      # (B, d)
+        return self.layer_norm(z1), self.layer_norm(z2)      # (B, d)
 
+
+class RotateTransform:
+    def __init__(self, angle=45):
+        self.angle = angle
+    
+    def __call__(self, x):
+        # (1, 5000, 12) for single sample of x
+        angle_rad = math.radians(self.angle)
+        theta = torch.tensor([
+            [math.cos(angle_rad), -math.sin(angle_rad), 0],
+            [math.sin(angle_rad), math.cos(angle_rad), 0]
+        ], dtype=torch.float32, device=x.device)
+        x = x.unsqueeze(0)  # add batch dim for grid_sample
+        grid = torch.nn.functional.affine_grid(theta.unsqueeze(0), x.size(), align_corners=False)
+        x_rot = torch.nn.functional.grid_sample(x, grid, align_corners=False, padding_mode='border')
+        return x_rot.squeeze(0)
+
+class ScaleTimeTransform:
+    def __init__(self, scale=1.5, orig_time=5000):
+        self.scale = scale
+        self.orig_time = orig_time
+    
+    def __call__(self, x):
+        # x shape: (1, 5000, 12)
+        n, t, l = x.shape
+        new_t = int(t * self.scale)
+        x_scaled = torch.nn.functional.interpolate(x.unsqueeze(0), size=(new_t, l), mode='bilinear', align_corners=False)
+        x_scaled = x_scaled.squeeze(0)
+        if new_t > self.orig_time:
+            x_scaled = x_scaled[:, :self.orig_time, :]
+        else:
+            pad_amount = self.orig_time - new_t
+            x_scaled = torch.nn.functional.pad(x_scaled, (0, 0, 0, pad_amount))
+        return x_scaled
+
+class TimeMaskTransform:
+    def __init__(self, max_mask_size=100):
+        self.max_mask_size = max_mask_size
+    
+    def __call__(self, x):
+        n, t, l = x.shape
+        x_masked = x.clone()
+        mask_size = random.randint(1, self.max_mask_size)
+        start = random.randint(0, t - mask_size)
+        x_masked[:, start:start+mask_size, :] = 0
+        return x_masked
 
 class ECGEncoder(nn.Module):
     def __init__(self, args):
@@ -134,7 +184,11 @@ class ECGEncoder(nn.Module):
         """
         super().__init__()
 
-        # self.transform = 
+        self.transform = Compose([
+            RotateTransform(angle=45),
+            ScaleTimeTransform(scale=1.5, orig_time=5000),
+            TimeMaskTransform(max_mask_size=100)
+        ])
 
         if args.pretrained:
             self.resnet = models.resnet18(weights="IMAGENET1K_V1")
@@ -146,6 +200,19 @@ class ECGEncoder(nn.Module):
 
         self.layer_norm = nn.LayerNorm(args.d)
 
+    def apply_ecg_aug(self, x, transform=self.transform):
+        N = x.shape[0]
+        C = x.shape[1]
+        S = x.shape[2]
+        L = x.shape[3]
+
+        # apply SimSiam augmentation per image tensor
+        view = torch.empty(N, C, S, L)
+        for i in range(N):
+            aug_x = transform(x[i])
+            view[i] = aug_x
+        return view
+
     def forward(self, x):
         """
         Args:
@@ -153,9 +220,11 @@ class ECGEncoder(nn.Module):
         Returns:
             x (torch.Tensor): learned ECG representation (batch_sz, d)
         """
-        x = self.resnet(x)
-        x = self.layer_norm(x)
-        return x
+        v1 = self.apply_ecg_aug(x)
+        v2 = self.apply_ecg_aug(x)
+        z1 = self.resnet(x1)
+        z2 = self.resnet(x2)
+        return self.layer_norm(z1), self.layer_norm(z2)
 
 
 class LabsEncoder(nn.Module):
@@ -258,49 +327,72 @@ class MMFTModel(pl.LightningModule):
                 - labs_missingness (torch.Tensor): missingness in laboratory training data (batch_sz, 50).
                 - hadm_id (torch.Tensor): unique hospital admission ids for the training data (batch_sz,).
         """
-        r_c = self.cxr_encoder(x[0])
+        r_c1, r_c2 = self.cxr_encoder(x[0])
 
-        r_e = self.ecg_encoder(x[1])
+        r_e1, r_e2 = self.ecg_encoder(x[1])
 
         labs = torch.cat([x[2], x[3]], dim=1)
-        r_l = self.labs_encoder(labs)
+        r_l_1, r_l_2 = self.labs_encoder(labs)
 
         # sequence dim for mha
-        r_c_seq = r_c.unsqueeze(1)  # (B, 1, 512)
-        r_e_seq = r_e.unsqueeze(1)  # (B, 1, 512)
-        r_l_seq = r_l.unsqueeze(1)  # (B, 1, 512)
+        r_c1_seq = r_c1.unsqueeze(1)  # (B, 1, 512)
+        r_e1_seq = r_e1.unsqueeze(1)  # (B, 1, 512)
+        r_l1_seq = r_l1.unsqueeze(1)  # (B, 1, 512)
+
+        r_c2_seq = r_c2.unsqueeze(1)  # (B, 1, 512)
+        r_e2_seq = r_e2.unsqueeze(1)  # (B, 1, 512)
+        r_l2_seq = r_l2.unsqueeze(1)  # (B, 1, 512)
 
         # Cross-attention: each modality attends to others
         # CXR attends to ECG
-        r_c_from_e, _ = self.cxr_attends_ecg(
-            query=r_c_seq, key=r_e_seq, value=r_e_seq
+        r_c1_from_e1, _ = self.cxr_attends_ecg(
+            query=r_c1_seq, key=r_e1_seq, value=r_e1_seq
         )  # (B, 1, 512)
+        r_c2_from_e2, _ = self.cxr_attends_ecg(
+            query=r_c2_seq, key=r_e2_seq, value=r_e2_seq
+        )
         
         # CXR attends to Labs
-        r_c_from_l, _ = self.cxr_attends_lab(
-            query=r_c_seq, key=r_l_seq, value=r_l_seq
+        r_c1_from_l1, _ = self.cxr_attends_lab(
+            query=r_c1_seq, key=r_l1_seq, value=r_l1_seq
         )  # (B, 1, 512)
+        r_c2_from_l2, _ = self.cxr_attends_lab(
+            query=r_c2_seq, key=r_l2_seq, value=r_l2_seq
+        )
         
         # ECG attends to Labs
-        r_e_from_l, _ = self.ecg_attends_lab(
-            query=r_e_seq, key=r_l_seq, value=r_l_seq
+        r_e1_from_l1, _ = self.ecg_attends_lab(
+            query=r_e1_seq, key=r_l1_seq, value=r_l1_seq
         )  # (B, 1, 512)
+        r_e2_from_l2, _ = self.ecg_attends_lab(
+            query=r_e2_seq, key=r_l2_seq, value=r_l2_seq
+        )
         
         # mix attended + original
-        r_c_upd = r_c_seq + r_c_from_e + r_c_from_l
-        r_e_upd = r_e_seq + r_e_from_l
-        r_l_upd = r_l_seq
+        r_c1_upd = r_c1_seq + r_c1_from_e1 + r_c1_from_l1
+        r_e1_upd = r_e1_seq + r_e1_from_l1
+        r_l1_upd = r_l1_seq
+
+        r_c2_upd = r_c2_seq + r_c2_from_e2 + r_c2_from_l2
+        r_e2_upd = r_e2_seq + r_e2_from_l2
+        r_l2_upd = r_l2_seq
         
         # Concatenate and project
-        r_concat = torch.cat([
-            r_cxr_updated.squeeze(1),
-            z_ecg_updated.squeeze(1),
-            z_lab_updated.squeeze(1)
+        r_concat1 = torch.cat([
+            r_c1_upd.squeeze(1),
+            r_e1_upd.squeeze(1),
+            r_l1_upd.squeeze(1)
         ], dim=1)  # (B, 1536)
+        r_concat2 = torch.cat([
+            r_c2_upd.squeeze(1),
+            r_e2_upd.squeeze(1),
+            r_l2_upd.squeeze(1)
+        ], dim=1)
         
-        r_fused = self.fusion_proj(r_concat)  # (B, 512)
+        z1 = self.fusion_proj(r_concat1)  # (B, 512)
+        z2 = self.fusion_proj(r_concat2)
 
-        return r_c, r_e, r_l, self.logit_scale.exp()
+        return z1, z2, self.logit_scale.exp()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
