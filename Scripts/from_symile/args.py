@@ -80,7 +80,7 @@ def parse_args_main():
                         help="Value used to initialize the learned logit_scale. \
                               CLIP used np.log(1 / 0.07) = 2.65926.")
     parser.add_argument("--loss_fn", type=str, default="symile",
-                        choices = ["symile", "clip"],
+                        choices = ["infonce", "symile", "clip"],
                         help="Loss function to use for training.")
     parser.add_argument("--lr", type=float,
                         help="Learning rate.")

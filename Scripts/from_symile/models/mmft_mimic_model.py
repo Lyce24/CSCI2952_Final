@@ -329,7 +329,7 @@ class MMFTModel(pl.LightningModule):
 
         self.args = Namespace(**args)
 
-        self.loss_fn = infonce # if self.args.loss_fn == "infonce" else symile
+        self.loss_fn = infonce if self.args.loss_fn == "infonce" else symile
 
         self.ecg_encoder = ECGEncoder(self.args)
         self.cxr_encoder = CXREncoder(self.args)
