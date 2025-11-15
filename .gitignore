@@ -7,6 +7,9 @@
 /mae-cxr
 /wandb
 
+/src
+/data
+
 /__pycache__
 
 /worktable.ipynb

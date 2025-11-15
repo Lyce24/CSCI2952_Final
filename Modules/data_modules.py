@@ -27,7 +27,14 @@ class CXRDataModule(pl.LightningDataModule):
             self.test_df = pd.read_csv(test_csv)
 
         # MAE uses simple augmentations: Resize, Horizontal Flip, ToTensor, Normalize
-        self.train_transform = T.Compose([
+        self.mae_train = T.Compose([
+            T.Resize((self.image_size, self.image_size)),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        self.sl_train = T.Compose([
             T.Resize((self.image_size, self.image_size)),
             T.RandomHorizontalFlip(),
             T.ToTensor(),
@@ -45,7 +52,7 @@ class CXRDataModule(pl.LightningDataModule):
             self.train_dataset = ChestXrayDataset(
                 df=self.train_df,
                 root_dir=self.root_dir + "/train",
-                transform=self.train_transform,
+                transform=self.mae_train,
                 labels=[],
                 path_index="Path"
             )
@@ -60,7 +67,7 @@ class CXRDataModule(pl.LightningDataModule):
             self.train_dataset = ChestXrayDataset(
                 df=self.train_df,
                 root_dir=self.root_dir + "/train",
-                transform=self.val_transform,
+                transform=self.sl_train,
                 labels=["Label"],
                 path_index="Path"
             )
@@ -82,7 +89,7 @@ class CXRDataModule(pl.LightningDataModule):
             self.train_dataset = ChestXrayDataset(
                 df=self.train_df,
                 root_dir=self.root_dir + "/images",
-                transform=self.val_transform,
+                transform=self.sl_train,
                 labels=[
                     'Hernia', 'Pneumothorax', 'Nodule', 'Edema', 'Effusion', 
                     'Pleural_Thickening', 'Cardiomegaly', 'Mass', 'Fibrosis', 
