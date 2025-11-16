@@ -104,17 +104,10 @@ def parse_args_main():
                               when debugging. 1.0 is default used by Trainer. \
                               Set to 0.1 to check 10% of dataset.")
 
-    ### SYMILE-MIMIC ARGS ###
-    if args.experiment == "symile_mimic":
-        parser.add_argument("--pretrained", type=str_to_bool, default=False,
+    parser.add_argument("--pretrained", type=str_to_bool, default=False,
                             help="Whether to pretrained encoders for CXR and ECG.")
-        parser.add_argument("--cxr_weights_path", type=Path, default=None,
-                        help="Optional path to custom weights for the CXR ViT.")
-        
-    ### MMFT-MIMIC ARGS ###
-    if args.experiment == "mmft_mimic":
-        parser.add_argument("--pretrained", type=str_to_bool, default=False,
-                            help="Whether to pretrained encoders for CXR and ECG.")
+    parser.add_argument("--cxr_weights_path", type=Path, default=None,
+                    help="Optional path to custom weights for the CXR ViT.")
 
     all_args = parser.parse_args(remaining_argv)
 
