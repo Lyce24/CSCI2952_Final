@@ -12,7 +12,6 @@ from timm.models.vision_transformer import Block, PatchEmbed
 # MoCo v3: https://github.com/facebookresearch/moco-v3
 # --------------------------------------------------------
 
-
 def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     """Get 1D sinusoidal positional embedding from grid.
 
@@ -37,7 +36,6 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
 
-
 def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
     assert embed_dim % 2 == 0
 
@@ -47,7 +45,6 @@ def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
 
     emb = np.concatenate([emb_h, emb_w], axis=1)  # (H*W, D)
     return emb
-
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """Get 2D sinusoidal positional embedding.
@@ -70,7 +67,6 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     if cls_token:
         pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
     return pos_embed
-
 
 class MaskedAutoencoderViT(nn.Module):
     """Masked Autoencoder with VisionTransformer backbone."""
@@ -262,6 +258,28 @@ class MaskedAutoencoderViT(nn.Module):
         mask = torch.gather(mask, dim=1, index=ids_restore)
 
         return x_masked, mask, ids_restore
+
+    def encode(self, x):
+        """
+        Encoder forward for downstream tasks: 
+        no masking, use full image, return CLS token representation.
+        """
+        # embed patches
+        x = self.patch_embed(x)                           # [N, L, D]
+        x = x + self.pos_embed[:, 1:, :]                  # add pos embed (no cls yet)
+
+        # add cls token
+        cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        cls_tokens = cls_token.expand(x.shape[0], -1, -1) # [N, 1, D]
+        x = torch.cat((cls_tokens, x), dim=1)             # [N, 1+L, D]
+
+        # transformer blocks
+        for blk in self.blocks:
+            x = blk(x)
+        x = self.norm(x)                                  # [N, 1+L, D]
+
+        # return CLS embedding
+        return x[:, 0]                                    # [N, D]
 
     def forward_encoder(self, x, mask_ratio):
         # embed patches

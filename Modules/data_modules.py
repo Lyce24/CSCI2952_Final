@@ -1,4 +1,4 @@
-import pytorch_lightning as pl
+import lightning as pl
 
 from Data.create_datasets import ChestXrayDataset
 from torchvision import transforms as T
@@ -28,10 +28,11 @@ class CXRDataModule(pl.LightningDataModule):
 
         # MAE uses simple augmentations: Resize, Horizontal Flip, ToTensor, Normalize
         self.mae_train = T.Compose([
-            T.Resize((self.image_size, self.image_size)),
+            T.RandomResizedCrop(self.image_size, scale=(0.5, 1.0)),
             T.RandomHorizontalFlip(),
             T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            T.Normalize(mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]),
         ])
 
         self.sl_train = T.Compose([

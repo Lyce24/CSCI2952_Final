@@ -49,7 +49,8 @@ def main(args):
     )
 
     wandb_logger = WandbLogger(
-        project=args.wandb_project
+        project=args.wandb_project,
+        name=f"sl_{args.task.lower()}_{args.mode}_{args.lr}_{args.weight_decay}_bs{args.batch_size}_ep{args.max_epochs}"
     )
 
     checkpoint_cb = ModelCheckpoint(
@@ -86,12 +87,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=512)
-    parser.add_argument("--num_workers", type=int, default=12)
+    parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--image_size", type=int, default=224)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=5e-3)
-    parser.add_argument("--warmup_epochs", type=int, default=3)
-    parser.add_argument("--max_epochs", type=int, default=35)
+    parser.add_argument("--weight_decay", type=float, default=0.05)
+    parser.add_argument("--warmup_epochs", type=int, default=5)
+    parser.add_argument("--max_epochs", type=int, default=80)
     parser.add_argument("--devices", type=int, default=1)
     parser.add_argument("--num_nodes", type=int, default=1)
     parser.add_argument("--pos_weight", type=float, default=None)
