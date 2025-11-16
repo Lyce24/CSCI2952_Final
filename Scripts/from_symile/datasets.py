@@ -405,12 +405,16 @@ class SymileMIMICDataModule(pl.LightningDataModule):
                           drop_last=self.args.drop_last)
 
     def val_dataloader(self):
+        # if self.args.experiment == "mmft_mimic":
+        #     return None
         return DataLoader(self.ds_val, batch_size=self.args.batch_sz_val,
                           shuffle=False,
                           num_workers=self.num_workers,
                           drop_last=False)
 
     def test_dataloader(self):
+        # if self.args.experiment == "mmft_mimic":
+        #     return None
         return DataLoader(self.ds_test, batch_size=self.args.batch_sz_test,
                           shuffle=False,
                           num_workers=self.num_workers,

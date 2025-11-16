@@ -70,10 +70,17 @@ def main(args):
     else:
         logger = False
 
-    checkpoint_callback = ModelCheckpoint(dirpath=args.save_dir,
-                                          filename="{epoch}-{val_loss:.4f}",
-                                          every_n_epochs=args.check_val_every_n_epoch,
-                                          save_top_k=-1)
+
+    if args.experiment == "mmft_mimic":
+        checkpoint_callback = ModelCheckpoint(dirpath=args.save_dir,
+                                                filename="{epoch}",
+                                                every_n_epochs=args.check_val_every_n_epoch,
+                                                save_top_k=-1)
+    else:
+        checkpoint_callback = ModelCheckpoint(dirpath=args.save_dir,
+                                                  filename="{epoch}-{val_loss:.4f}",
+                                                  every_n_epochs=args.check_val_every_n_epoch,
+                                                  save_top_k=-1)
 
     trainer = Trainer(
         enable_checkpointing=False,
@@ -91,6 +98,7 @@ def main(args):
     )
 
     dm = get_data_module(args)
+    dm.setup(stage="fit")
 
     if args.experiment == "symile_m3" and args.missingness:
         setattr(args, "tokenizer_len", dm.tokenizer_len)
@@ -99,10 +107,16 @@ def main(args):
 
     if args.ckpt_path == None:
         print("Training model from scratch!")
-        trainer.fit(model, datamodule=dm)
+        if args.experiment != "mmft_mimic":
+            trainer.fit(model, datamodule=dm)
+        else:
+            trainer.fit(model, train_dataloaders=dm.train_dataloader())
     else:
         print("Loading checkpoint from ", args.ckpt_path)
-        trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
+        if args.experiment != "mmft_mimic":
+            trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
+        else:
+            trainer.fit(model, train_dataloaders=dm.train_dataloader(), ckpt_path=args.ckpt_path)
 
 
 if __name__ == '__main__':

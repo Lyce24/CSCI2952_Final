@@ -35,6 +35,8 @@ def get_data_module(args):
     """
     if args.experiment in ["symile_mimic", "mmft_mimic"]:
         dm = datasets.SymileMIMICDataModule
+    if args.experiment == "mmft_mimic":
+        dm = datasets.SymileMIMICDataModule
     else:
         raise ValueError("Unsupported experiment name specified.")
 
@@ -86,10 +88,11 @@ def binary_xor_main(args):
                                               mode="min",
                                               monitor="val_loss")
         
+        cvene = args.check_val_every_n_epoch if args.experiment != "mmft_mimic" else None
 
         trainer = Trainer(
             callbacks=checkpoint_callback,
-            check_val_every_n_epoch=args.check_val_every_n_epoch,
+            check_val_every_n_epoch=cvene,
             deterministic=args.use_seed,
             enable_progress_bar=True,
             limit_train_batches=args.limit_train_batches,
@@ -167,10 +170,17 @@ def main(args):
 
     if args.ckpt_path == "None":
         print("Training model from scratch!")
-        trainer.fit(model, datamodule=dm)
+        if args.experiment != "mmft_mimic":
+            trainer.fit(model, datamodule=dm)
+        else:
+            trainer.fit(model, train_dataloader=dm.train_dataloader())
     else:
         print("Loading checkpoint from ", args.ckpt_path)
-        trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
+        if args.experiment != "mmft_mimic":
+            trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
+        else:
+            trainer.fit(model, train_dataloader=dm.train_dataloader(), ckpt_path=args.ckpt_path)
+
 
 
 if __name__ == '__main__':
