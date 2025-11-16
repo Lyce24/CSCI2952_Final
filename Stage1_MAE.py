@@ -1,7 +1,7 @@
 import torch
 
 from Modules.data_modules import CXRDataModule
-from Modules.lightning_modules import MAELightningModule
+from Modules.mae_lit import MAELightningModule
 
 from lightning.pytorch.loggers import WandbLogger
 import lightning as pl

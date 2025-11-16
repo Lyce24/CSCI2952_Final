@@ -1,4 +1,3 @@
-# For plotting validation reconstructions
 import torchvision.utils as vutils
 import torch
 import lightning as pl
