@@ -18,6 +18,7 @@
 
 /covid_cxr_ssl_eval
 /nih_cxr_ssl_eval
+output.txt
 
 *sh
 *.ipynb_checkpoints
@@ -34,3 +35,4 @@
 *.egg-info
 .vscode/
 .env
+output.txt

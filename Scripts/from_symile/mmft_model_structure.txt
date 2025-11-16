@@ -1,0 +1,17 @@
+  | Name            | Type               | Params | Mode 
+---------------------------------------------------------------
+0 | ecg_encoder     | ECGEncoder         | 11.6 M | train
+1 | cxr_encoder     | CXREncoder         | 85.8 M | train
+2 | labs_encoder    | LabsEncoder        | 1.1 M  | train
+3 | cxr_attends_ecg | MultiheadAttention | 2.4 M  | train
+4 | cxr_attends_lab | MultiheadAttention | 2.4 M  | train
+5 | ecg_attends_lab | MultiheadAttention | 2.4 M  | train
+6 | fusion_proj     | Sequential         | 3.1 M  | train
+  | other params    | n/a                | 1      | n/a  
+---------------------------------------------------------------
+108 M     Trainable params
+0         Non-trainable params
+108 M     Total params
+434.713   Total estimated model params size (MB)
+365       Modules in train mode
+0         Modules in eval mode
