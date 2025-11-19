@@ -43,7 +43,15 @@ class CXRModel(nn.Module):
         # --------- 3. New classifier head ----------
         in_dim = getattr(self.backbone, "num_features", None)
         if in_dim is None:
-            in_dim = getattr(self.backbone, "embed_dim")
+            if backbone_name == "vit_huge_patch14_224":
+                in_dim = 1280
+            elif backbone_name == "vit_large_patch16_224":
+                in_dim = 1024
+            elif backbone_name == "vit_base_patch16_224":
+                in_dim = 768
+            else:
+                raise ValueError(f"Unknown backbone name: {backbone_name}")
+            
         self.head = nn.Linear(in_dim, num_classes)
 
     def forward(self, x):

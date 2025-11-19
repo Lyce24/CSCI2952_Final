@@ -67,21 +67,21 @@ class CXRDataModule(pl.LightningDataModule):
         elif self.task == "COVID":
             self.train_dataset = ChestXrayDataset(
                 df=self.train_df,
-                root_dir=self.root_dir + "/train",
+                root_dir=self.root_dir + "/images",
                 transform=self.sl_train,
                 labels=["Label"],
                 path_index="Path"
             )
             self.val_dataset = ChestXrayDataset(
                 df=self.val_df,
-                root_dir=self.root_dir + "/val",
+                root_dir=self.root_dir + "/images",
                 transform=self.val_transform,
                 labels=["Label"],
                 path_index="Path"
             )            
             self.test_dataset = ChestXrayDataset(
                 df=self.test_df,
-                root_dir=self.root_dir + "/test",
+                root_dir=self.root_dir + "/images",
                 transform=self.val_transform,
                 labels=["Label"],
                 path_index="Path"
@@ -119,6 +119,50 @@ class CXRDataModule(pl.LightningDataModule):
                    'Consolidation', 'Pneumonia', 'Infiltration', 'Emphysema', 'Atelectasis'
                 ],
                 path_index="Image Index"
+            )
+        elif self.task == "PNE":
+            self.train_dataset = ChestXrayDataset(
+                df=self.train_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.sl_train,
+                labels=['Pneumonia'],
+                path_index="Path"
+            )
+            self.val_dataset = ChestXrayDataset(
+                df=self.val_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=['Pneumonia'],
+                path_index="Path"
+            )            
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=['Pneumonia'],
+                path_index="Path"
+            )
+        elif self.task == "COVIDQU":
+            self.train_dataset = ChestXrayDataset(
+                df=self.train_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.sl_train,
+                labels=['Label'],
+                path_index="Path"
+            )
+            self.val_dataset = ChestXrayDataset(
+                df=self.val_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=['Label'],
+                path_index="Path"
+            )            
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=self.root_dir + "/images",
+                transform=self.val_transform,
+                labels=['Label'],
+                path_index="Path"
             )
         else:
             raise ValueError(f"Unsupported task: {self.task}")

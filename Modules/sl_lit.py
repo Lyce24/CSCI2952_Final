@@ -1,4 +1,3 @@
-
 from torchmetrics.classification import (
     BinaryAUROC,
     BinaryAccuracy,
@@ -10,6 +9,11 @@ from torchmetrics.classification import (
     MultilabelPrecision,
     MultilabelRecall,
     MultilabelF1Score,
+    MulticlassAUROC,
+    MulticlassAccuracy,
+    MulticlassPrecision,
+    MulticlassRecall,
+    MulticlassF1Score,
 )
 
 from Models.models import CXRModel
@@ -21,6 +25,7 @@ from torch.optim import AdamW
 import math
 from typing import Optional, List
 import torch.nn as nn
+
 
 class ClassificationLightningModule(pl.LightningModule):
     def __init__(
@@ -35,12 +40,30 @@ class ClassificationLightningModule(pl.LightningModule):
         betas=(0.9, 0.95),
         class_names: Optional[List[str]] = None,
         backbone_name: str = "vit_base_patch16_224",
+        # NEW: choose between "multilabel" and "multiclass" when num_classes > 1
+        task_type: str = "multilabel",
     ):
+        """
+        task_type:
+            - "binary"    : ignored here; num_classes == 1 forces binary
+            - "multilabel": multi-label (CheXpert-style)
+            - "multiclass": single-label multi-class (Normal / Pneumonia / COVID, etc.)
+        """
         super().__init__()
         self.save_hyperparameters()
 
+        assert task_type in {"multilabel", "multiclass"}
+
         self.num_classes = num_classes
-        self.is_binary = num_classes == 1
+
+        if num_classes == 1:
+            self.task_type = "binary"
+        else:
+            self.task_type = task_type
+
+        self.is_binary = self.task_type == "binary"
+        self.is_multilabel = self.task_type == "multilabel"
+        self.is_multiclass = self.task_type == "multiclass"
 
         # backbone + head
         self.model = CXRModel(
@@ -51,7 +74,13 @@ class ClassificationLightningModule(pl.LightningModule):
             freeze_backbone=freeze_backbone,
         )
 
-        self.criterion = nn.BCEWithLogitsLoss()
+        # Loss
+        if self.is_binary or self.is_multilabel:
+            # sigmoid + BCE for binary/multilabel
+            self.criterion = nn.BCEWithLogitsLoss()
+        else:
+            # softmax + CE for multiclass
+            self.criterion = nn.CrossEntropyLoss()
 
         # Class names
         if class_names is None:
@@ -65,7 +94,7 @@ class ClassificationLightningModule(pl.LightningModule):
 
         # ---------------- METRICS ----------------
         if self.is_binary:
-            # Binary metrics: scalar only (no per-class concept)
+            # Binary metrics
             # val
             self.val_auroc = BinaryAUROC()
             self.val_acc = BinaryAccuracy()
@@ -78,39 +107,73 @@ class ClassificationLightningModule(pl.LightningModule):
             self.test_prec = BinaryPrecision()
             self.test_rec = BinaryRecall()
             self.test_f1 = BinaryF1Score()
-        else:
-            # val global
-            self.val_auroc_macro = MultilabelAUROC(
+
+        elif self.is_multilabel:
+            # Multilabel global metrics (macro)
+            self.val_auroc_macro_ml = MultilabelAUROC(
                 num_labels=num_classes, average="macro"
             )
-            self.val_acc_macro = MultilabelAccuracy(
+            self.val_acc_macro_ml = MultilabelAccuracy(
                 num_labels=num_classes, average="macro"
             )
-            self.val_prec_macro = MultilabelPrecision(
+            self.val_prec_macro_ml = MultilabelPrecision(
                 num_labels=num_classes, average="macro"
             )
-            self.val_rec_macro = MultilabelRecall(
+            self.val_rec_macro_ml = MultilabelRecall(
                 num_labels=num_classes, average="macro"
             )
-            self.val_f1_macro = MultilabelF1Score(
+            self.val_f1_macro_ml = MultilabelF1Score(
                 num_labels=num_classes, average="macro"
             )
-           
-            # test global
-            self.test_auroc_macro = MultilabelAUROC(
+
+            self.test_auroc_macro_ml = MultilabelAUROC(
                 num_labels=num_classes, average="macro"
             )
-            self.test_acc_macro = MultilabelAccuracy(
+            self.test_acc_macro_ml = MultilabelAccuracy(
                 num_labels=num_classes, average="macro"
             )
-            self.test_prec_macro = MultilabelPrecision(
+            self.test_prec_macro_ml = MultilabelPrecision(
                 num_labels=num_classes, average="macro"
             )
-            self.test_rec_macro = MultilabelRecall(
+            self.test_rec_macro_ml = MultilabelRecall(
                 num_labels=num_classes, average="macro"
             )
-            self.test_f1_macro = MultilabelF1Score(
+            self.test_f1_macro_ml = MultilabelF1Score(
                 num_labels=num_classes, average="macro"
+            )
+
+        elif self.is_multiclass:
+            # Multiclass global metrics (macro)
+            self.val_auroc_macro_mc = MulticlassAUROC(
+                num_classes=num_classes, average="macro"
+            )
+            self.val_acc_macro_mc = MulticlassAccuracy(
+                num_classes=num_classes, average="macro"
+            )
+            self.val_prec_macro_mc = MulticlassPrecision(
+                num_classes=num_classes, average="macro"
+            )
+            self.val_rec_macro_mc = MulticlassRecall(
+                num_classes=num_classes, average="macro"
+            )
+            self.val_f1_macro_mc = MulticlassF1Score(
+                num_classes=num_classes, average="macro"
+            )
+
+            self.test_auroc_macro_mc = MulticlassAUROC(
+                num_classes=num_classes, average="macro"
+            )
+            self.test_acc_macro_mc = MulticlassAccuracy(
+                num_classes=num_classes, average="macro"
+            )
+            self.test_prec_macro_mc = MulticlassPrecision(
+                num_classes=num_classes, average="macro"
+            )
+            self.test_rec_macro_mc = MulticlassRecall(
+                num_classes=num_classes, average="macro"
+            )
+            self.test_f1_macro_mc = MulticlassF1Score(
+                num_classes=num_classes, average="macro"
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -120,20 +183,38 @@ class ClassificationLightningModule(pl.LightningModule):
         imgs, targets = batch
         logits = self(imgs)
 
+        # ------------- LOSS + PROBS / PREDS -------------
         if self.is_binary:
             # logits: [B,1] or [B] -> [B]
             logits = logits.view(-1)
             targets = targets.float().view(-1)
-        else:
-            # multilabel: [B,C]
+
+            loss = self.criterion(logits, targets)
+
+            probs = torch.sigmoid(logits)          # [B]
+            preds = (probs >= 0.5).int()          # [B]
+
+        elif self.is_multilabel:
+            # multilabel: logits [B,C], targets [B,C]
             targets = targets.float()
 
-        loss = self.criterion(logits, targets)
+            loss = self.criterion(logits, targets)
 
-        probs = torch.sigmoid(logits)
-        preds = (probs >= 0.5).float()
+            probs = torch.sigmoid(logits)         # [B,C]
+            preds = (probs >= 0.5).int()          # [B,C]
 
-        # -------- metrics update --------
+        else:  # multiclass
+            # logits [B,C], targets [B] or [B,1]
+            if targets.ndim == 2 and targets.size(-1) == 1:
+                targets = targets.view(-1)
+            targets = targets.long()              # class indices
+
+            loss = self.criterion(logits, targets)
+
+            probs = torch.softmax(logits, dim=-1)  # [B,C]
+            preds = torch.argmax(probs, dim=-1)    # [B]
+
+        # ------------- METRICS UPDATE -------------
         if self.is_binary:
             if stage == "val":
                 self.val_auroc.update(probs, targets.int())
@@ -147,20 +228,36 @@ class ClassificationLightningModule(pl.LightningModule):
                 self.test_prec.update(preds, targets.int())
                 self.test_rec.update(preds, targets.int())
                 self.test_f1.update(preds, targets.int())
-        else:
-            if stage == "val":
-                self.val_auroc_macro.update(probs, targets.int())
-                self.val_acc_macro.update(preds, targets.int())
-                self.val_prec_macro.update(preds, targets.int())
-                self.val_rec_macro.update(preds, targets.int())
-                self.val_f1_macro.update(preds, targets.int())
 
+        elif self.is_multilabel:
+            if stage == "val":
+                self.val_auroc_macro_ml.update(probs, targets.int())
+                self.val_acc_macro_ml.update(preds, targets.int())
+                self.val_prec_macro_ml.update(preds, targets.int())
+                self.val_rec_macro_ml.update(preds, targets.int())
+                self.val_f1_macro_ml.update(preds, targets.int())
             elif stage == "test":
-                self.test_auroc_macro.update(probs, targets.int())
-                self.test_acc_macro.update(preds, targets.int())
-                self.test_prec_macro.update(preds, targets.int())
-                self.test_rec_macro.update(preds, targets.int())
-                self.test_f1_macro.update(preds, targets.int())
+                self.test_auroc_macro_ml.update(probs, targets.int())
+                self.test_acc_macro_ml.update(preds, targets.int())
+                self.test_prec_macro_ml.update(preds, targets.int())
+                self.test_rec_macro_ml.update(preds, targets.int())
+                self.test_f1_macro_ml.update(preds, targets.int())
+
+        else:  # multiclass
+            if stage == "val":
+                # AUROC: probs [B,C], targets [B]
+                self.val_auroc_macro_mc.update(probs, targets)
+                # others use preds [B], targets [B]
+                self.val_acc_macro_mc.update(preds, targets)
+                self.val_prec_macro_mc.update(preds, targets)
+                self.val_rec_macro_mc.update(preds, targets)
+                self.val_f1_macro_mc.update(preds, targets)
+            elif stage == "test":
+                self.test_auroc_macro_mc.update(probs, targets)
+                self.test_acc_macro_mc.update(preds, targets)
+                self.test_prec_macro_mc.update(preds, targets)
+                self.test_rec_macro_mc.update(preds, targets)
+                self.test_f1_macro_mc.update(preds, targets)
 
         return loss
 
@@ -209,13 +306,13 @@ class ClassificationLightningModule(pl.LightningModule):
             self.val_prec.reset()
             self.val_rec.reset()
             self.val_f1.reset()
-        else:
-            # global
-            auroc = self.val_auroc_macro.compute()
-            acc = self.val_acc_macro.compute()
-            prec = self.val_prec_macro.compute()
-            rec = self.val_rec_macro.compute()
-            f1 = self.val_f1_macro.compute()
+
+        elif self.is_multilabel:
+            auroc = self.val_auroc_macro_ml.compute()
+            acc = self.val_acc_macro_ml.compute()
+            prec = self.val_prec_macro_ml.compute()
+            rec = self.val_rec_macro_ml.compute()
+            f1 = self.val_f1_macro_ml.compute()
 
             self.log("val/auroc_macro", auroc, prog_bar=True, sync_dist=True)
             self.log("val/acc_macro", acc, sync_dist=True)
@@ -223,11 +320,30 @@ class ClassificationLightningModule(pl.LightningModule):
             self.log("val/recall_macro", rec, sync_dist=True)
             self.log("val/f1_macro", f1, sync_dist=True)
 
-            self.val_auroc_macro.reset()
-            self.val_acc_macro.reset()
-            self.val_prec_macro.reset()
-            self.val_rec_macro.reset()
-            self.val_f1_macro.reset()
+            self.val_auroc_macro_ml.reset()
+            self.val_acc_macro_ml.reset()
+            self.val_prec_macro_ml.reset()
+            self.val_rec_macro_ml.reset()
+            self.val_f1_macro_ml.reset()
+
+        else:  # multiclass
+            auroc = self.val_auroc_macro_mc.compute()
+            acc = self.val_acc_macro_mc.compute()
+            prec = self.val_prec_macro_mc.compute()
+            rec = self.val_rec_macro_mc.compute()
+            f1 = self.val_f1_macro_mc.compute()
+
+            self.log("val/auroc_macro", auroc, prog_bar=True, sync_dist=True)
+            self.log("val/acc_macro", acc, sync_dist=True)
+            self.log("val/precision_macro", prec, sync_dist=True)
+            self.log("val/recall_macro", rec, sync_dist=True)
+            self.log("val/f1_macro", f1, sync_dist=True)
+
+            self.val_auroc_macro_mc.reset()
+            self.val_acc_macro_mc.reset()
+            self.val_prec_macro_mc.reset()
+            self.val_rec_macro_mc.reset()
+            self.val_f1_macro_mc.reset()
 
     # ---------- TEST ----------
     def test_step(self, batch, batch_idx):
@@ -261,13 +377,13 @@ class ClassificationLightningModule(pl.LightningModule):
             self.test_prec.reset()
             self.test_rec.reset()
             self.test_f1.reset()
-        else:
-            # global
-            auroc = self.test_auroc_macro.compute()
-            acc = self.test_acc_macro.compute()
-            prec = self.test_prec_macro.compute()
-            rec = self.test_rec_macro.compute()
-            f1 = self.test_f1_macro.compute()
+
+        elif self.is_multilabel:
+            auroc = self.test_auroc_macro_ml.compute()
+            acc = self.test_acc_macro_ml.compute()
+            prec = self.test_prec_macro_ml.compute()
+            rec = self.test_rec_macro_ml.compute()
+            f1 = self.test_f1_macro_ml.compute()
 
             self.log("test/auroc_macro", auroc, sync_dist=True)
             self.log("test/acc_macro", acc, sync_dist=True)
@@ -275,15 +391,34 @@ class ClassificationLightningModule(pl.LightningModule):
             self.log("test/recall_macro", rec, sync_dist=True)
             self.log("test/f1_macro", f1, sync_dist=True)
 
-            self.test_auroc_macro.reset()
-            self.test_acc_macro.reset()
-            self.test_prec_macro.reset()
-            self.test_rec_macro.reset()
-            self.test_f1_macro.reset()
+            self.test_auroc_macro_ml.reset()
+            self.test_acc_macro_ml.reset()
+            self.test_prec_macro_ml.reset()
+            self.test_rec_macro_ml.reset()
+            self.test_f1_macro_ml.reset()
+
+        else:  # multiclass
+            auroc = self.test_auroc_macro_mc.compute()
+            acc = self.test_acc_macro_mc.compute()
+            prec = self.test_prec_macro_mc.compute()
+            rec = self.test_rec_macro_mc.compute()
+            f1 = self.test_f1_macro_mc.compute()
+
+            self.log("test/auroc_macro", auroc, sync_dist=True)
+            self.log("test/acc_macro", acc, sync_dist=True)
+            self.log("test/precision_macro", prec, sync_dist=True)
+            self.log("test/recall_macro", rec, sync_dist=True)
+            self.log("test/f1_macro", f1, sync_dist=True)
+
+            self.test_auroc_macro_mc.reset()
+            self.test_acc_macro_mc.reset()
+            self.test_prec_macro_mc.reset()
+            self.test_rec_macro_mc.reset()
+            self.test_f1_macro_mc.reset()
 
     # ---------- OPTIMIZER ----------
     def configure_optimizers(self):
-        # only the linear head should be trainable anyway
+        # Only the linear head should be trainable anyway if freeze_backbone=True
         params = [p for p in self.model.parameters() if p.requires_grad]
 
         optimizer = AdamW(
@@ -309,4 +444,3 @@ class ClassificationLightningModule(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"},
         }
-
