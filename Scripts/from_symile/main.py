@@ -33,7 +33,7 @@ def get_data_module(args):
     """
     Returns the appropriate DataModule based on the experiment.
     """
-    if args.experiment in ["symile_mimic", "mmft_mimic"]:
+    if args.experiment in ["symile_mimic", "mmft_mimic", "stft_mimic"]:
         dm = datasets.SymileMIMICDataModule
     if args.experiment == "mmft_mimic":
         dm = datasets.SymileMIMICDataModule
@@ -50,6 +50,9 @@ def get_model_module(args):
     if args.experiment == "mmft_mimic":
         module = importlib.import_module("models.mmft_mimic_model")
         ModelClass = getattr(module, "MMFTModel")
+    elif args.experiment == "stft_mimic":
+        module = importlib.import_module("models.stft_mimic_model")
+        ModelClass = getattr(module, "STFTModel")
     elif args.experiment == "symile_mimic":
         module = importlib.import_module("models.symile_mimic_model")
         ModelClass = getattr(module, "SymileMIMICModel")
@@ -76,7 +79,7 @@ def binary_xor_main(args):
         else:
             logger = False
 
-        if args.experiment == "mmft_mimic":
+        if args.experiment in ["mmft_mimic", "stft_mimic"]:
             checkpoint_callback = ModelCheckpoint(dirpath=p_hat_save_dir,
                                                 filename="{epoch}",
                                                 every_n_epochs=1,
@@ -88,7 +91,7 @@ def binary_xor_main(args):
                                               mode="min",
                                               monitor="val_loss")
         
-        cvene = args.check_val_every_n_epoch if args.experiment != "mmft_mimic" else None
+        cvene = args.check_val_every_n_epoch if args.experiment != "mmft_mimic" and args.experiment != "stft_mimic" else None
 
         trainer = Trainer(
             callbacks=checkpoint_callback,
@@ -170,13 +173,13 @@ def main(args):
 
     if args.ckpt_path == "None":
         print("Training model from scratch!")
-        if args.experiment != "mmft_mimic":
+        if args.experiment != "mmft_mimic" and args.experiment != "stft_mimic":
             trainer.fit(model, datamodule=dm)
         else:
             trainer.fit(model, train_dataloader=dm.train_dataloader())
     else:
         print("Loading checkpoint from ", args.ckpt_path)
-        if args.experiment != "mmft_mimic":
+        if args.experiment != "mmft_mimic" and args.experiment != "stft_mimic":
             trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
         else:
             trainer.fit(model, train_dataloader=dm.train_dataloader(), ckpt_path=args.ckpt_path)
@@ -195,7 +198,7 @@ if __name__ == '__main__':
     if args.use_seed:
         seed_everything(args.seed, workers=True)
 
-    if args.experiment in ["mmft_mimic", "symile_mimic"]:
+    if args.experiment in ["mmft_mimic", "symile_mimic", "stft_mimic"]:
         main(args)
     else:
         raise ValueError("Unsupported experiment name specified.")

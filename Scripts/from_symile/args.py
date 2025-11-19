@@ -34,7 +34,7 @@ def parse_args_main():
     # first parse only the --experiment argument
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--experiment", type=str,
-                        choices=["mmft_mimic", "symile_mimic"],
+                        choices=["mmft_mimic", "symile_mimic", "stft_mimic"],
                         required=True,
                         help="Which experiment is being run.")
     args, remaining_argv = parser.parse_known_args()
@@ -107,7 +107,9 @@ def parse_args_main():
     parser.add_argument("--pretrained", type=str_to_bool, default=False,
                             help="Whether to pretrained encoders for CXR and ECG.")
     parser.add_argument("--cxr_weights_path", type=Path, default=None,
-                    help="Optional path to custom weights for the CXR ViT.")
+                    help="Path to custom weights for the CXR ViT 1.")
+    parser.add_argument("--symile_mimic_weights_path", type=Path, default=None,
+                    help="Path to pretrained symile mimic weights.")
 
     all_args = parser.parse_args(remaining_argv)
 
@@ -121,7 +123,7 @@ def parse_args_test():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--experiment", type=str,
-                        choices = ["mmft_mimic", "symile_mimic"],
+                        choices = ["mmft_mimic", "symile_mimic", "ssft_mimic"],
                         help="Which experiment is being run.")
 
     ### ARGUMENTS COMMON TO BOTH EXPERIMENTS ###
@@ -154,7 +156,7 @@ def parse_args_collect_tuning_results():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--experiment", type=str,
-                        choices = ["mmft_mimic", "symile_mimic"], required=True,
+                        choices = ["mmft_mimic", "symile_mimic", "stft_mimic"], required=True,
                         help="Which experiment is being run.")
     parser.add_argument("--results_pt", type=Path,
                         help="Path to yaml file with hyperparameter tuning results.")

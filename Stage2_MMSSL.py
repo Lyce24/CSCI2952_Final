@@ -39,7 +39,7 @@ def get_data_module(args):
     """
     Returns the appropriate DataModule based on the experiment.
     """
-    if args.experiment in ["symile_mimic", "mmft_mimic"]:
+    if args.experiment in ["symile_mimic", "mmft_mimic", "stft_mimic"]:
         dm = datasets.SymileMIMICDataModule
     else:
         raise ValueError("Unsupported experiment name specified.")
@@ -54,6 +54,9 @@ def get_model_module(args):
     if args.experiment == "mmft_mimic":
         module = importlib.import_module("models.mmft_mimic_model")
         ModelClass = getattr(module, "MMFTModel")
+    elif args.experiment == "stft_mimic":
+        module = importlib.import_module("models.stft_mimic_model")
+        ModelClass = getattr(module, "STFTModel")
     elif args.experiment == "symile_mimic":
         module = importlib.import_module("models.symile_mimic_model")
         ModelClass = getattr(module, "SymileMIMICModel")
@@ -71,7 +74,7 @@ def main(args):
         logger = False
 
 
-    if args.experiment == "mmft_mimic":
+    if args.experiment in ["mmft_mimic", "stft_mimic"]:
         checkpoint_callback = ModelCheckpoint(dirpath=args.save_dir,
                                                 filename="{epoch}",
                                                 every_n_epochs=args.check_val_every_n_epoch,
@@ -107,13 +110,13 @@ def main(args):
 
     if args.ckpt_path == None:
         print("Training model from scratch!")
-        if args.experiment != "mmft_mimic":
+        if args.experiment != "mmft_mimic" and args.experiment != "stft_mimic":
             trainer.fit(model, datamodule=dm)
         else:
             trainer.fit(model, train_dataloaders=dm.train_dataloader())
     else:
         print("Loading checkpoint from ", args.ckpt_path)
-        if args.experiment != "mmft_mimic":
+        if args.experiment != "mmft_mimic" and args.experiment != "stft_mimic":
             trainer.fit(model, datamodule=dm, ckpt_path=args.ckpt_path)
         else:
             trainer.fit(model, train_dataloaders=dm.train_dataloader(), ckpt_path=args.ckpt_path)
@@ -131,7 +134,7 @@ if __name__ == '__main__':
     if args.use_seed:
         seed_everything(args.seed, workers=True)
 
-    if args.experiment in ["mmft_mimic", "symile_mimic"]:
+    if args.experiment in ["mmft_mimic", "symile_mimic", "stft_mimic"]:
         main(args)
     else:
         raise ValueError("Unsupported experiment name specified.")
