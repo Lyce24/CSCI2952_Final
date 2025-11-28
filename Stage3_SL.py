@@ -1,4 +1,4 @@
-from Modules.data_modules import CXRDataModule
+from Data.data_modules import CXRDataModule
 from Modules.sl_lit import ClassificationLightningModule
 
 import argparse
@@ -10,6 +10,9 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 def main(args):
+    # SEED FOR REPRODUCIBILITY
+    pl.seed_everything(args.seed, workers=True)
+    
     # -------------------------
     # Data module
     # -------------------------
@@ -30,9 +33,23 @@ def main(args):
     if args.task == "COVID":
         class_names = ["COVID"]
         num_classes = 1
+        task_type = "binary"
     elif args.task == "PNE":
         class_names = ["PNEUMONIA"]
         num_classes = 1
+        task_type = "binary"
+    elif args.task == "TB":
+        class_names = ["TB"]
+        num_classes = 1
+        task_type = "binary"
+    elif args.task == "COVIDQU":
+        class_names = ["Normal", "COVID-19", "Non-COVID"]
+        num_classes = len(class_names)
+        task_type = "multiclass"
+    elif args.task == "CHESTX6":
+        class_names = ["Covid-19","Emphysema","Normal","Pneumonia-Bacterial","Pneumonia-Viral","Tuberculosis"]
+        num_classes = len(class_names)
+        task_type = "multiclass"
     elif args.task == "NIH":
         class_names = [
             "Hernia", "Pneumothorax", "Nodule", "Edema", "Effusion",
@@ -40,6 +57,16 @@ def main(args):
             "Consolidation", "Pneumonia", "Infiltration", "Emphysema", "Atelectasis",
         ]
         num_classes = len(class_names)
+        task_type = "multilabel"
+    elif args.task == "VINDR":
+        class_names = [
+            'Pneumothorax', 'Atelectasis', 'Mediastinal shift', 'Consolidation', 
+            'Lung tumor', 'ILD', 'Calcification', 'Infiltration', 'Other lesion', 
+            'Nodule/Mass', 'Pneumonia', 'Tuberculosis', 'Lung Opacity', 'Pleural effusion', 
+            'Pleural thickening', 'Pulmonary fibrosis', 'Cardiomegaly', 'Aortic enlargement', 'Other diseases'
+        ]
+        num_classes = len(class_names)
+        task_type = "multilabel"
     else:
         raise ValueError(f"Unsupported task: {args.task}")
 
@@ -49,8 +76,10 @@ def main(args):
     # -------------------------
     current_time = time.strftime("%Y%m%d_%H%M%S")
 
+    probe_mode = "ft" if args.unfreeze_backbone else "lp"  # linear probe vs fine-tune
+
     run_name = (
-        f"sl_{args.task.lower()}_{args.mode}"
+        f"sl_{args.task.lower()}_{args.mode}_{probe_mode}"
         f"_bs{args.batch_size}"
         f"_lr{args.lr}"
         f"_wd{args.weight_decay}"
@@ -70,13 +99,14 @@ def main(args):
         num_classes=num_classes,
         model_mode=args.mode,
         model_weights_path=args.ckpt_path,
-        freeze_backbone=True,
+        unfreeze_backbone=args.unfreeze_backbone,
         lr=args.lr,
         weight_decay=args.weight_decay,
         warmup_epochs=args.warmup_epochs,
         betas=(0.9, 0.999),
         class_names=class_names,
         backbone_name="vit_base_patch16_224",
+        task_type=task_type
     )
 
     wandb_logger = WandbLogger(
@@ -141,14 +171,19 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--num_workers", type=int, default=16)
     parser.add_argument("--image_size", type=int, default=224)
-    parser.add_argument("--lr", type=float, default=3e-3) # for SGD
-    parser.add_argument("--weight_decay", type=float, default=0.01) # for SGD
-    parser.add_argument("--warmup_epochs", type=int, default=3)
-    parser.add_argument("--max_epochs", type=int, default=40)
+    parser.add_argument("--lr", type=float, default=3e-3) # 3e-3 for linear probing / 3e-4 for fine-tuning
+    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--warmup_epochs", type=int, default=0)
+    parser.add_argument("--max_epochs", type=int, default=40) # fine-tune for 40 epochs/ linear probe for 30 epochs
     parser.add_argument("--devices", type=int, default=1)
     parser.add_argument("--num_nodes", type=int, default=1)
-    parser.add_argument("--mode", type=str, default="imagenet", choices=["mae", "imagenet"])
+    parser.add_argument("--mode", type=str, default="imagenet")
     
+    parser.add_argument(
+        "--unfreeze_backbone",
+        action="store_true",
+        help="If set, unfreeze the backbone (fine-tuning). Default (not set): freeze backbone (linear probing).",
+    )
     parser.add_argument("--task", type=str, default="COVID")
     parser.add_argument("--train_csv", type=str, default="./src/covid_train_split.csv")
     parser.add_argument("--val_csv", type=str, default="./src/covid_val_split.csv")
@@ -163,6 +198,8 @@ if __name__ == "__main__":
         type=str,
         default="../../scratch/model_checkpoints/sl_cxr",
     )
+    
+    parser.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
     

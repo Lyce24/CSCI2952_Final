@@ -33,8 +33,9 @@ class ClassificationLightningModule(pl.LightningModule):
         num_classes: int,
         model_mode: str = "imagenet",
         model_weights_path: Optional[str] = None,
-        freeze_backbone: bool = True,
+        unfreeze_backbone: bool = False,
         lr: float = 1e-4,
+        backbone_lr: Optional[float] = None,
         weight_decay: float = 1e-5,
         warmup_epochs: int = 10,
         betas=(0.9, 0.95),
@@ -71,7 +72,7 @@ class ClassificationLightningModule(pl.LightningModule):
             mode=model_mode,
             backbone_name=backbone_name,
             model_checkpoints=model_weights_path,
-            freeze_backbone=freeze_backbone,
+            unfreeze_backbone=unfreeze_backbone,
         )
 
         # Loss
@@ -418,28 +419,69 @@ class ClassificationLightningModule(pl.LightningModule):
 
     # ---------- OPTIMIZER ----------
     def configure_optimizers(self):
-        # Only the linear head should be trainable anyway if freeze_backbone=True
-        params = [p for p in self.model.parameters() if p.requires_grad]
+        # 1. Separate groups for Weight Decay (WD) vs No-WD
+        #    and Backbone vs Head
+        backbone_decay = []
+        backbone_no_decay = []
+        head_decay = []
+        head_no_decay = []
 
-        optimizer = AdamW(
-            params,
-            lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
-            betas=self.hparams.betas,
-        )
+        # Define what constitutes the "head" (Adjust this string to match your model!)
+        # Common names: "head"
+        head_name_identifiers = ["head"] 
+        
+        # Helper to check if a param belongs to the head
+        def is_head(name):
+            return any(id in name for id in head_name_identifiers)
 
+        for name, p in self.model.named_parameters():
+            if not p.requires_grad:
+                continue
+            
+            # Check if parameter is bias or normalization (No WD)
+            if p.ndim < 2 or "bias" in name or "norm" in name or "bn" in name:
+                if is_head(name):
+                    head_no_decay.append(p)
+                else:
+                    backbone_no_decay.append(p)
+            else:
+                # Weights (Apply WD)
+                if is_head(name):
+                    head_decay.append(p)
+                else:
+                    backbone_decay.append(p)
+
+        # 2. Determine Learning Rates
+        # If backbone is frozen, these lists are empty, so the specific LR value won't matter
+        bb_lr = self.hparams.backbone_lr or (self.hparams.lr * 0.1)
+        
+        # 3. Create Optimizer Groups
+        optim_groups = [
+            {"params": backbone_decay,    "lr": bb_lr,           "weight_decay": self.hparams.weight_decay},
+            {"params": backbone_no_decay, "lr": bb_lr,           "weight_decay": 0.0},
+            {"params": head_decay,        "lr": self.hparams.lr, "weight_decay": self.hparams.weight_decay},
+            {"params": head_no_decay,     "lr": self.hparams.lr, "weight_decay": 0.0},
+        ]
+        
+        # Safety check: Did we actually find head params?
+        total_head_params = len(head_decay) + len(head_no_decay)
+        if total_head_params == 0:
+            print(f"WARNING: No parameters matched '{head_name_identifiers}'. Check your model architecture names!")
+
+        optimizer = AdamW(optim_groups, betas=self.hparams.betas)
+
+        # 4. Scheduler (unchanged, your logic was good)
         def lr_lambda(current_epoch):
-            # linear warmup
             if current_epoch < self.hparams.warmup_epochs:
-                return float(current_epoch + 1) / float(
-                    max(1, self.hparams.warmup_epochs)
-                )
-            # cosine decay
+                return float(current_epoch + 1) / float(max(1, self.hparams.warmup_epochs))
+            
             total = max(self.trainer.max_epochs - self.hparams.warmup_epochs, 1)
-            progress = (current_epoch - self.hparams.warmup_epochs) / total
+            # Clamp progress to [0, 1] to prevent math domain errors if training overruns
+            progress = min(1.0, max(0.0, (current_epoch - self.hparams.warmup_epochs) / total))
             return 0.5 * (1.0 + math.cos(progress * math.pi))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        
         return {
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"},

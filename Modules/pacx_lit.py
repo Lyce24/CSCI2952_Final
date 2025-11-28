@@ -180,9 +180,9 @@ class PACXTeacherStudentModule(pl.LightningModule):
         )
         
         # Get output dim dynamically
-        dummy_in = torch.randn(1, 3, 224, 224)
+        dummy_in = torch.randn(1, 3, 224, 224, device=next(self.teacher_cxr_encoder.parameters()).device)
         with torch.no_grad():
-            out = self.teacher_cxr_encoder(dummy_in)
+            out = self.teacher_cxr_encoder.encode(dummy_in)
             teacher_out_dim = out.shape[1]
 
         # B. Physiology Encoders (ECG + Labs)
@@ -278,13 +278,13 @@ class PACXTeacherStudentModule(pl.LightningModule):
 
         return backbone
 
-    def _build_symile_encoder(self, d, encoders_checkpoint_path):
-        ckpt = torch.load(encoders_checkpoint_path, map_location="cpu", weights_only=False)
+    def _build_symile_encoder(self, d, ckpt_path):
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         state = ckpt["state_dict"]
         model = SymileMIMICModel(d = d, pretrained = False)
         model.load_state_dict(state, strict=False)
         return model
-
+    
     # -----------------------
     # Core forward helpers
     # -----------------------
@@ -302,6 +302,11 @@ class PACXTeacherStudentModule(pl.LightningModule):
         """
         Compute teacher embedding from frozen encoders.
         """
+        
+        # Symile-MIMIC cxr_<split>.npy is (3, 320, 320), so we downsample.
+        if cxr.shape[-2] != 224 or cxr.shape[-1] != 224:
+            cxr = F.interpolate(cxr, size=(224, 224), mode="bilinear", align_corners=False)
+        
         with torch.no_grad():
             img_feat = self.teacher_cxr_encoder(cxr) if self.mode == "imagenet" else self.teacher_cxr_encoder.encode(cxr)
             ecg_feat = self.ecg_encoder(ecg)            # (B, d)

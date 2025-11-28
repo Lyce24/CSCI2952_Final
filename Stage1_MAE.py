@@ -8,7 +8,7 @@ from lightning.pytorch.loggers import WandbLogger
 
 import torch
 
-from Modules.data_modules import CXRDataModule
+from Data.data_modules import CXRDataModule
 from Modules.mae_lit import MAELightningModule
 
 
