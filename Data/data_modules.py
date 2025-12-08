@@ -4,17 +4,16 @@ from Data.create_datasets import ChestXrayDataset, CXRSegDataset
 from torchvision import transforms as T
 
 import pandas as pd
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 import os
 from typing import Optional
 
-import pandas as pd
 from PIL import Image
 import torch
 import torchvision.transforms.functional as F
-import lightning as pl
 import random
+from pathlib import Path
 
 class CXRDataModule(pl.LightningDataModule):
     def __init__(self, train_csv, val_csv, root_dir, test_csv=None,
@@ -424,4 +423,66 @@ class CXRSegDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
+        )
+
+class SymileMIMICDataModule(pl.LightningDataModule):
+    """Lightning DataModule for Symile-MIMIC"""
+    def __init__(
+        self,
+        data_dir: str,
+        batch_size: int = 256,
+        num_workers: Optional[int] = None,
+    ):
+        super().__init__()
+        self.data_dir = Path(data_dir)
+        self.batch_size = batch_size
+        
+        if num_workers is None:
+            try:
+                self.num_workers = len(os.sched_getaffinity(0))
+            except AttributeError:
+                self.num_workers = 4
+        else:
+            self.num_workers = num_workers
+
+    def setup(self, stage: Optional[str] = None):
+        if stage == "fit" or stage is None:
+            # Load training data
+            cxr_train = torch.load(self.data_dir / "train/cxr_train.pt")
+            ecg_train = torch.load(self.data_dir / "train/ecg_train.pt")
+            labs_pct_train = torch.load(self.data_dir / "train/labs_percentiles_train.pt")
+            labs_miss_train = torch.load(self.data_dir / "train/labs_missingness_train.pt")
+            
+            # Load validation data
+            cxr_val = torch.load(self.data_dir / "val/cxr_val.pt")
+            ecg_val = torch.load(self.data_dir / "val/ecg_val.pt")
+            labs_pct_val = torch.load(self.data_dir / "val/labs_percentiles_val.pt")
+            labs_miss_val = torch.load(self.data_dir / "val/labs_missingness_val.pt")
+            
+            self.ds_train = TensorDataset(cxr_train, ecg_train, labs_pct_train, labs_miss_train)
+            self.ds_val = TensorDataset(cxr_val, ecg_val, labs_pct_val, labs_miss_val)
+            
+            print(f"✓ Loaded {len(self.ds_train)} training samples")
+            print(f"✓ Loaded {len(self.ds_val)} validation samples")
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.ds_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            drop_last=True,
+            persistent_workers=True if self.num_workers > 0 else False,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.ds_val,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True,
+            drop_last=False,
+            persistent_workers=True if self.num_workers > 0 else False,
         )

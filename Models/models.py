@@ -8,7 +8,40 @@ import torch
 import torch.nn as nn
 from timm.models.vision_transformer import Block, PatchEmbed
 
-class MAECXRModel(nn.Module):
+class ECGEncoder(nn.Module):
+    """ResNet18-based ECG encoder"""
+    def __init__(self, output_dim: int = 256):
+        super().__init__()
+        self.resnet = models.resnet18(pretrained=False)
+        self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        in_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Identity()
+        self.projection = nn.Sequential(
+            nn.Linear(in_features, output_dim),
+            nn.LayerNorm(output_dim)
+        )
+    
+    def forward(self, x):
+        x = self.resnet(x)
+        return self.projection(x)
+
+
+class LabsEncoder(nn.Module):
+    """MLP-based Labs encoder"""
+    def __init__(self, output_dim: int = 256):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(100, 512),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(512, output_dim),
+            nn.LayerNorm(output_dim)
+        )
+    
+    def forward(self, x):
+        return self.network(x)
+
+class MAECXREncoder(nn.Module):
     def __init__(
         self,
         img_size=224,
@@ -193,7 +226,7 @@ class CXRModel(nn.Module):
                 encoder_state_stripped[new_key] = v
             
             # ViT Base backbone
-            backbone = MAECXRModel(
+            backbone = MAECXREncoder(
                         patch_size=16,
                         embed_dim=768,
                         depth=12,
@@ -235,7 +268,37 @@ class CXRModel(nn.Module):
             print("Missing keys:", missing)
             print("Unexpected keys:", unexpected)
         elif self.mode == "pacx":
-            raise NotImplementedError("PACX backbone loading not implemented yet.")
+            # Load the checkpoint
+            ckpt = torch.load(
+                self.model_checkpoints,
+                map_location="cpu",
+                weights_only=False
+            )
+
+            state = ckpt["state_dict"]
+
+            # ---- 1. Filter student CXR encoder keys ----
+            student_state = {k: v for k, v in state.items() if k.startswith("cxr_encoder.")}
+
+            # ---- 2. Strip the "cxr_encoder." prefix ----
+            student_state_stripped = {}
+            for k, v in student_state.items():
+                new_key = k.replace("cxr_encoder.", "")   # CXREncoder expects keys without this prefix
+                student_state_stripped[new_key] = v
+
+            # ---- 3. Load NON-STRICT into MAECXREncoder ----
+            backbone = MAECXREncoder(
+                        patch_size=16,
+                        embed_dim=768,
+                        depth=12,
+                        num_heads=12,
+                        mlp_ratio=4,
+                        norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                    )
+            
+            missing, unexpected = backbone.load_state_dict(student_state_stripped, strict=False)
+            print("Missing keys:", missing)
+            print("Unexpected keys:", unexpected)
         else:
             raise ValueError(f"Unknown model mode: {self.mode}. Supported modes are: imagenet, mae, mimic, pacx.")
         
