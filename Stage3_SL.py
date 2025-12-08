@@ -42,6 +42,10 @@ def main(args):
         class_names = ["TB"]
         num_classes = 1
         task_type = "binary"
+    elif args.task == "chexchonet":
+        class_names = ["SLVH_DLV_Positive"]
+        num_classes = 1
+        task_type = "binary"
     elif args.task == "COVIDQU":
         class_names = ["Normal", "COVID-19", "Non-COVID"]
         num_classes = len(class_names)
