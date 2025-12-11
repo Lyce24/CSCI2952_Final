@@ -88,7 +88,7 @@ def match_admission_to_cxr(row, mimic_cxr_meta_df):
     # Drop to prevent reuse of the same image
     mimic_cxr_meta_df.drop(earliest_study.name, inplace=True)  
     # Format study to MIMIC-CXR-JPG file path
-    earliest_study_path = f"p{str(subject_id)[:2]}/{subject_id}/s{earliest_study['study_id']}/{earliest_study['dicom_id']}.jpg"
+    earliest_study_path = f"p{str(subject_id)[:2]}/p{subject_id}/s{earliest_study['study_id']}/{earliest_study['dicom_id']}.jpg"
 
     return earliest_study_path
 
