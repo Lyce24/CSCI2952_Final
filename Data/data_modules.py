@@ -344,6 +344,34 @@ class CXRDataModule(pl.LightningDataModule):
                 ],
                 path_index="cxr_path"
             )
+        elif self.task == "MEDMOD-MORT":
+            self.train_dataset = ChestXrayDataset(
+                df=self.train_df,
+                root_dir=self.root_dir + "/train/",
+                transform=self.sl_train,
+                labels=[
+                    "mortality_inunit","mortality","mortality_inhospital"
+                ],
+                path_index="cxr_path"
+            )
+            self.val_dataset = ChestXrayDataset(
+                df=self.val_df,
+                root_dir=self.root_dir + "/val/",
+                transform=self.val_transform,
+                labels=[
+                    "mortality_inunit","mortality","mortality_inhospital"
+                ],
+                path_index="cxr_path"
+            )            
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=self.root_dir + "/test/",
+                transform=self.val_transform,
+                labels=[
+                    "mortality_inunit","mortality","mortality_inhospital"
+                ],
+                path_index="cxr_path"
+            )
         else:
             raise ValueError(f"Unsupported task: {self.task}")
 
