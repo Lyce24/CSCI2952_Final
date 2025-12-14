@@ -58,9 +58,6 @@ def main():
         for row in tqdm(split_df.itertuples(), total=len(split_df), desc=f"Moving {split} files"):
             cxr_path = str(row.cxr_path)
 
-            # Fix missing "p" directory level
-            cxr_path_correct = cxr_path[:4] + "p" + cxr_path[4:]
-
             # Full absolute path to the source CXR image
             src = os.path.join(mimic_dir, cxr_path_correct)
 

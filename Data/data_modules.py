@@ -292,6 +292,58 @@ class CXRDataModule(pl.LightningDataModule):
                 labels=['composite_slvh_dlv'],
                 path_index="cxr_filename"
             )
+        elif self.task == "MEDMOD-PHYS":
+            self.train_dataset = ChestXrayDataset(
+                df=self.train_df,
+                root_dir=self.root_dir + "/train/",
+                transform=self.sl_train,
+                labels=[
+                    "Acute and unspecified renal failure", "Acute cerebrovascular disease", "Acute myocardial infarction", "Cardiac dysrhythmias",
+                    "Chronic kidney disease", "Chronic obstructive pulmonary disease and bronchiectasis", "Complications of surgical procedures or medical care",
+                    "Conduction disorders", "Congestive heart failure; nonhypertensive", "Coronary atherosclerosis and other heart disease",
+                    "Diabetes mellitus with complications", "Diabetes mellitus without complication", "Disorders of lipid metabolism",
+                    "Essential hypertension", "Fluid and electrolyte disorders",
+                    "Gastrointestinal hemorrhage", "Hypertension with complications and secondary hypertension",
+                    "Other liver diseases", "Other lower respiratory disease", "Other upper respiratory disease",
+                    "Pleurisy; pneumothorax; pulmonary collapse", "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)", "Respiratory failure; insufficiency; arrest (adult)",
+                    "Septicemia (except in labor)", "Shock"
+                ],
+                path_index="cxr_path"
+            )
+            self.val_dataset = ChestXrayDataset(
+                df=self.val_df,
+                root_dir=self.root_dir + "/val/",
+                transform=self.val_transform,
+                labels=[
+                    "Acute and unspecified renal failure", "Acute cerebrovascular disease", "Acute myocardial infarction", "Cardiac dysrhythmias",
+                    "Chronic kidney disease", "Chronic obstructive pulmonary disease and bronchiectasis", "Complications of surgical procedures or medical care",
+                    "Conduction disorders", "Congestive heart failure; nonhypertensive", "Coronary atherosclerosis and other heart disease",
+                    "Diabetes mellitus with complications", "Diabetes mellitus without complication", "Disorders of lipid metabolism",
+                    "Essential hypertension", "Fluid and electrolyte disorders",
+                    "Gastrointestinal hemorrhage", "Hypertension with complications and secondary hypertension",
+                    "Other liver diseases", "Other lower respiratory disease", "Other upper respiratory disease",
+                    "Pleurisy; pneumothorax; pulmonary collapse", "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)", "Respiratory failure; insufficiency; arrest (adult)",
+                    "Septicemia (except in labor)", "Shock"
+                ],
+                path_index="cxr_path"
+            )            
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=self.root_dir + "/test/",
+                transform=self.val_transform,
+                labels=[
+                    "Acute and unspecified renal failure", "Acute cerebrovascular disease", "Acute myocardial infarction", "Cardiac dysrhythmias",
+                    "Chronic kidney disease", "Chronic obstructive pulmonary disease and bronchiectasis", "Complications of surgical procedures or medical care",
+                    "Conduction disorders", "Congestive heart failure; nonhypertensive", "Coronary atherosclerosis and other heart disease",
+                    "Diabetes mellitus with complications", "Diabetes mellitus without complication", "Disorders of lipid metabolism",
+                    "Essential hypertension", "Fluid and electrolyte disorders",
+                    "Gastrointestinal hemorrhage", "Hypertension with complications and secondary hypertension",
+                    "Other liver diseases", "Other lower respiratory disease", "Other upper respiratory disease",
+                    "Pleurisy; pneumothorax; pulmonary collapse", "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)", "Respiratory failure; insufficiency; arrest (adult)",
+                    "Septicemia (except in labor)", "Shock"
+                ],
+                path_index="cxr_path"
+            )
         else:
             raise ValueError(f"Unsupported task: {self.task}")
 

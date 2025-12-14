@@ -25,8 +25,7 @@ def main():
     for row in medmod_df.itertuples():
         cmd_cxr = cmd.copy()
         cxr_path = str(row.cxr_path)
-        cxr_path_correct = cxr_path[:4] + "p" + cxr_path[4:]
-        cmd_cxr[7] = cmd_cxr[7] + str(cxr_path_correct)
+        cmd_cxr[7] = cmd_cxr[7] + str(cxr_path)
 
         cxr_path_check = "/users/mspancho/scratch/" + cmd_cxr[7][8:]
         if os.path.exists(cxr_path_check):
