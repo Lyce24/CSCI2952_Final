@@ -116,11 +116,11 @@ class CLIPRegressionLoss(nn.Module):
                 clip_targets):                          # Targets adjusted for Rank
         
         # ---- CLIP Losses (Symmetric Local->Global) ----
-        # 1. CXR <-> ECG
         zero = cxr_local.new_tensor(0.0)
         loss_dict: Dict[str, torch.Tensor] = {}
         clip_terms: List[torch.Tensor] = []
 
+        # 1. CXR <-> ECG
         if self.use_ecg:
             loss_cxr_ecg = self.clip_loss(cxr_local, ecg_global, clip_targets)
             loss_ecg_cxr = self.clip_loss(ecg_local, cxr_global, clip_targets)
@@ -128,6 +128,7 @@ class CLIPRegressionLoss(nn.Module):
             loss_dict["clip_cxr_ecg"] = clip_cxr_ecg
             clip_terms.append(clip_cxr_ecg)
 
+        # 2. CXR <-> Labs
         if self.use_labs:
             loss_cxr_labs = self.clip_loss(cxr_local, labs_global, clip_targets)
             loss_labs_cxr = self.clip_loss(labs_local, cxr_global, clip_targets)
@@ -228,9 +229,11 @@ class CrossModalCXRDistillation(pl.LightningModule):
         self.use_labs = True
         if self.ablation:
             if self.ablation == "ecg":
-                self.use_labs = False
-            elif self.ablation == "labs":
                 self.use_ecg = False
+            elif self.ablation == "labs":
+                self.use_labs = False
+                self._val_labs_updated = False
+
 
         # ---- Projection Heads for CLIP (all trainable, discarded at inference) ----
         self.cxr_to_shared = ProjectionHead(cxr_dim, shared_dim)
@@ -247,14 +250,16 @@ class CrossModalCXRDistillation(pl.LightningModule):
             regression_weight=regression_weight,
             temperature=temperature,
             label_smoothing=label_smoothing,
-            ablation=self.ablation
+            use_ecg=self.use_ecg,
+            use_labs=self.use_labs,
         )
 
         self.val_cos_ecg = CosineSimilarity(reduction='mean')
         self.val_cos_labs = CosineSimilarity(reduction='mean')
+        self._val_ecg_updated = True if self.use_ecg else False
+        self._val_labs_updated = True if self.use_labs else False
+
         self.train_loss_tracker = MeanMetric()
-        self._val_ecg_updated = False
-        self._val_labs_updated = False
 
         
         self._print_model_info()
@@ -461,8 +466,6 @@ class CrossModalCXRDistillation(pl.LightningModule):
             labs_target=outputs.get("labs_emb"),
             # Targets
             clip_targets=targets,
-            use_ecg=self.use_ecg,
-            use_labs=self.use_labs,
         )
         
         N_ecg  = int(ecg_global.size(0)) if self.use_ecg and ecg_global is not None else None
@@ -471,6 +474,8 @@ class CrossModalCXRDistillation(pl.LightningModule):
         N_total = N_ecg if N_ecg else N_labs
 
         def _log_clip_adjusted(tag: str, loss_tensor: torch.Tensor, N: int):
+            if loss_tensor is None or N is None:
+                return
             logN = loss_tensor.new_tensor(math.log(N))
             mi_lb = (logN - loss_tensor).detach()      # higher is better
             norm  = (loss_tensor / logN).detach()      # random ~1, perfect -> 0
@@ -481,15 +486,19 @@ class CrossModalCXRDistillation(pl.LightningModule):
             self.log(f"{tag}_logN", logN.detach(), batch_size=B, sync_dist=True)
 
         # --- Per-loss logging ---
-        _log_clip_adjusted("train/clip_cxr_ecg",  loss_dict.get("clip_cxr_ecg"),  N_ecg)
-        _log_clip_adjusted("train/clip_cxr_labs", loss_dict.get("clip_cxr_labs"), N_labs)
+        if self.use_ecg:
+            _log_clip_adjusted("train/clip_cxr_ecg",  loss_dict.get("clip_cxr_ecg"),  N_ecg)
+        if self.use_labs:
+            _log_clip_adjusted("train/clip_cxr_labs", loss_dict.get("clip_cxr_labs"), N_labs)
         _log_clip_adjusted("train/clip_total",    loss_dict["clip_total"],    N_total)
 
         # Logging
         self.log("train/loss_total", loss_dict["total"], prog_bar=True, batch_size=B, sync_dist=True)
         self.log("train/loss_reg", loss_dict["reg_total"], batch_size=B, sync_dist=True)
-        self.log("train/loss_reg_ecg", loss_dict["reg_ecg"], batch_size=B, sync_dist=True)
-        self.log("train/loss_reg_labs", loss_dict["reg_labs"], batch_size=B, sync_dist=True)
+        if "reg_ecg" in loss_dict:
+            self.log("train/loss_reg_ecg", loss_dict["reg_ecg"], batch_size=B, sync_dist=True)
+        if "reg_labs" in loss_dict:
+            self.log("train/loss_reg_labs", loss_dict["reg_labs"], batch_size=B, sync_dist=True)
         self.log("train/logit_scale", loss_dict["logit_scale"], batch_size=B, sync_dist=True)
         
         return loss
@@ -535,8 +544,6 @@ class CrossModalCXRDistillation(pl.LightningModule):
             labs_target=outputs.get("labs_emb"),
             # Targets
             clip_targets=targets,
-            use_ecg=self.use_ecg,
-            use_labs=self.use_labs,
         )
 
 
@@ -545,49 +552,60 @@ class CrossModalCXRDistillation(pl.LightningModule):
             cxr_norm = F.normalize(outputs["cxr_shared"], dim=-1, eps=1e-6)
             targets = torch.arange(B, device=cxr_norm.device)
 
-            # TODO: Continue ablation work here
+            k = min(5, B)  # top-k for retrieval
 
-            ecg_norm = F.normalize(outputs["ecg_shared"], dim=-1, eps=1e-6)
-            labs_norm = F.normalize(outputs["labs_shared"], dim=-1, eps=1e-6)
+            if self.use_ecg:
+                ecg_norm = F.normalize(outputs["ecg_shared"], dim=-1, eps=1e-6)
+                sim_cxr_ecg = cxr_norm @ ecg_norm.t()
 
-            sim_cxr_ecg = cxr_norm @ ecg_norm.t()
-            sim_cxr_labs = cxr_norm @ labs_norm.t()
+                top1_cxr_ecg = sim_cxr_ecg.argmax(1).eq(targets).float().mean()
+                top5_cxr_ecg = sim_cxr_ecg.topk(k, dim=1).indices.eq(targets[:, None]).any(1).float().mean()
 
-            top1_cxr_ecg = sim_cxr_ecg.argmax(1).eq(targets).float().mean()
-            top1_cxr_labs = sim_cxr_labs.argmax(1).eq(targets).float().mean()
+                pos_ecg = sim_cxr_ecg.diag().mean()
 
-            k = min(5, B)
-            top5_cxr_ecg = sim_cxr_ecg.topk(k, dim=1).indices.eq(targets[:, None]).any(1).float().mean()
-            top5_cxr_labs = sim_cxr_labs.topk(k, dim=1).indices.eq(targets[:, None]).any(1).float().mean()
+                if B > 1:
+                    neg_ecg = (sim_cxr_ecg.sum() - sim_cxr_ecg.diag().sum()) / (B * (B - 1))
+                else:
+                    neg_ecg = sim_cxr_ecg.new_tensor(0.0)
 
-            # pos/neg similarity diagnostics (detect collapse / shortcutting)
-            pos_ecg = sim_cxr_ecg.diag().mean()
-            pos_labs = sim_cxr_labs.diag().mean()
-            if B > 1:
-                neg_ecg = (sim_cxr_ecg.sum() - sim_cxr_ecg.diag().sum()) / (B * (B - 1))
-                neg_labs = (sim_cxr_labs.sum() - sim_cxr_labs.diag().sum()) / (B * (B - 1))
-            else:
-                neg_ecg = sim_cxr_ecg.new_tensor(0.0)
-                neg_labs = sim_cxr_labs.new_tensor(0.0)
+                # ---- Regression cosine (epoch-aggregated) ----
+                pred_ecg_norm = F.normalize(outputs["cxr_to_ecg_pred"], dim=-1, eps=1e-6)
+                tgt_ecg_norm = F.normalize(outputs["ecg_emb"], dim=-1, eps=1e-6)
+                cosine_ecg = (pred_ecg_norm * tgt_ecg_norm).sum(dim=-1).mean()
 
-            # ---- Regression cosine (epoch-aggregated) ----
-            pred_ecg_norm = F.normalize(outputs["cxr_to_ecg_pred"], dim=-1, eps=1e-6)
-            tgt_ecg_norm = F.normalize(outputs["ecg_emb"], dim=-1, eps=1e-6)
-            cosine_ecg = (pred_ecg_norm * tgt_ecg_norm).sum(dim=-1).mean()
+                self.val_cos_ecg(outputs["cxr_to_ecg_pred"], outputs["ecg_emb"]) 
+                self._val_ecg_updated = True
 
-            pred_labs_norm = F.normalize(outputs["cxr_to_labs_pred"], dim=-1, eps=1e-6)
-            tgt_labs_norm = F.normalize(outputs["labs_emb"], dim=-1, eps=1e-6)
-            cosine_labs = (pred_labs_norm * tgt_labs_norm).sum(dim=-1).mean()
+                ecg_shared_norm = outputs["ecg_shared"].norm(dim=-1).mean()
 
-            self.val_cos_ecg(outputs["cxr_to_ecg_pred"], outputs["ecg_emb"]) 
-            self.val_cos_labs(outputs["cxr_to_labs_pred"], outputs["labs_emb"])
+            if self.use_labs:
+                labs_norm = F.normalize(outputs["labs_shared"], dim=-1, eps=1e-6)
+                sim_cxr_labs = cxr_norm @ labs_norm.t()
+
+                top1_cxr_labs = sim_cxr_labs.argmax(1).eq(targets).float().mean()
+                top5_cxr_labs = sim_cxr_labs.topk(k, dim=1).indices.eq(targets[:, None]).any(1).float().mean()
+
+                # pos/neg similarity diagnostics (detect collapse / shortcutting)
+                pos_labs = sim_cxr_labs.diag().mean()
+
+                if B > 1:
+                    neg_labs = (sim_cxr_labs.sum() - sim_cxr_labs.diag().sum()) / (B * (B - 1))
+                else:
+                    neg_labs = sim_cxr_labs.new_tensor(0.0)
+
+                # ---- Regression cosine (epoch-aggregated) ----
+                pred_labs_norm = F.normalize(outputs["cxr_to_labs_pred"], dim=-1, eps=1e-6)
+                tgt_labs_norm = F.normalize(outputs["labs_emb"], dim=-1, eps=1e-6)
+                cosine_labs = (pred_labs_norm * tgt_labs_norm).sum(dim=-1).mean()
+
+                self.val_cos_labs(outputs["cxr_to_labs_pred"], outputs["labs_emb"])
+                self._val_labs_updated = True
+
+                labs_shared_norm = outputs["labs_shared"].norm(dim=-1).mean()
 
             # embedding health checks
             cxr_emb_norm = outputs["cxr_emb"].norm(dim=-1).mean()
             cxr_shared_norm = outputs["cxr_shared"].norm(dim=-1).mean()
-            ecg_shared_norm = outputs["ecg_shared"].norm(dim=-1).mean()
-            labs_shared_norm = outputs["labs_shared"].norm(dim=-1).mean()
-
             cxr_shared_std = outputs["cxr_shared"].std(dim=0).mean()
 
         N_ecg  = int(ecg_global.size(0)) if self.use_ecg and ecg_global is not None else None
@@ -596,6 +614,8 @@ class CrossModalCXRDistillation(pl.LightningModule):
         N_total = N_ecg if N_ecg else N_labs
 
         def _log_clip_adjusted(tag: str, loss_tensor: torch.Tensor, N: int):
+            if loss_tensor is None or N is None:
+                return
             logN = loss_tensor.new_tensor(math.log(N))
             mi_lb = (logN - loss_tensor).detach()      # higher is better
             norm  = (loss_tensor / logN).detach()      # random ~1, perfect -> 0
@@ -606,31 +626,41 @@ class CrossModalCXRDistillation(pl.LightningModule):
             self.log(f"{tag}_logN", logN.detach(), batch_size=B, sync_dist=True)
 
         # --- Per-loss logging ---
-        _log_clip_adjusted("val/clip_cxr_ecg",  loss_dict["clip_cxr_ecg"],  N_ecg)
-        _log_clip_adjusted("val/clip_cxr_labs", loss_dict["clip_cxr_labs"], N_labs)
+        if self.use_ecg:
+            _log_clip_adjusted("val/clip_cxr_ecg",  loss_dict.get("clip_cxr_ecg"),  N_ecg)
+        if self.use_labs:
+            _log_clip_adjusted("val/clip_cxr_labs", loss_dict.get("clip_cxr_labs"), N_labs)
         _log_clip_adjusted("val/clip_total",    loss_dict["clip_total"],    N_total)
 
         # ---- Logging (epoch-level for val) ----
         self.log("val/loss_total", loss_dict["total"], prog_bar=True, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
         self.log("val/loss_reg", loss_dict["reg_total"], batch_size=B, sync_dist=True)
-        self.log("val/loss_reg_ecg", loss_dict["reg_ecg"], batch_size=B, sync_dist=True)
-        self.log("val/loss_reg_labs", loss_dict["reg_labs"], batch_size=B, sync_dist=True)
+        if "reg_ecg" in loss_dict:
+            self.log("val/loss_reg_ecg", loss_dict["reg_ecg"], batch_size=B, sync_dist=True)
+        if "reg_labs" in loss_dict:
+            self.log("val/loss_reg_labs", loss_dict["reg_labs"], batch_size=B, sync_dist=True)
         self.log("val/logit_scale", loss_dict["logit_scale"], batch_size=B, sync_dist=True)
 
-        self.log("val/top1_cxr_ecg", top1_cxr_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/top1_cxr_labs", top1_cxr_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/top5_cxr_ecg", top5_cxr_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/top5_cxr_labs", top5_cxr_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_ecg:
+            self.log("val/top1_cxr_ecg", top1_cxr_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+            self.log("val/top5_cxr_ecg", top5_cxr_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_labs:
+            self.log("val/top1_cxr_labs", top1_cxr_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+            self.log("val/top5_cxr_labs", top5_cxr_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
 
-        self.log("val/pos_sim_ecg", pos_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/neg_sim_ecg", neg_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/pos_sim_labs", pos_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/neg_sim_labs", neg_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_ecg:
+            self.log("val/pos_sim_ecg", pos_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+            self.log("val/neg_sim_ecg", neg_ecg, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_labs:
+            self.log("val/pos_sim_labs", pos_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+            self.log("val/neg_sim_labs", neg_labs, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
 
         self.log("val/cxr_emb_norm", cxr_emb_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
         self.log("val/cxr_shared_norm", cxr_shared_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/ecg_shared_norm", ecg_shared_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
-        self.log("val/labs_shared_norm", labs_shared_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_ecg:
+            self.log("val/ecg_shared_norm", ecg_shared_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
+        if self.use_labs:
+            self.log("val/labs_shared_norm", labs_shared_norm, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
         self.log("val/cxr_shared_std", cxr_shared_std, batch_size=B, sync_dist=True, on_step=False, on_epoch=True)
 
         return loss

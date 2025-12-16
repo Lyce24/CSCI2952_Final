@@ -194,7 +194,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.05)
-    parser.add_argument("--ablation", type=str, default=None, help="Modality to ablate: 'ecg' or 'labs'")
+    parser.add_argument("--ablation", type=str, default=None, choices=[None, "ecg", "labs"], help="Modality to ablate: 'ecg' or 'labs'")
 
     # --- LLRD & Unfreezing ---
     parser.add_argument(
