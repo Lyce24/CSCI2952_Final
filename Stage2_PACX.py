@@ -19,6 +19,7 @@ import argparse
 
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.strategies import DDPStrategy
 
 # ----------------------------------------------------------------------------
 # Import your model and data modules here
@@ -74,7 +75,7 @@ def train_model(
     # Initialize Model with new LLRD args
     model = CrossModalCXRDistillation(
         mae_checkpoint_path=args.mae_checkpoint,
-        ablation=args.ablation,
+        ablation=args.ablate_mode,
         # Modalities Dimensions
         cxr_dim=768,
         ecg_dim=1024,
@@ -108,7 +109,7 @@ def train_model(
         accelerator=args.accelerator,
         devices=args.devices,
         num_nodes=args.num_nodes,
-        strategy="auto", 
+        strategy=DDPStrategy(find_unused_parameters=True), 
         logger=logger,
         callbacks=[ckpt_cb, lr_cb],
         default_root_dir=str(save_dir),
@@ -194,7 +195,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.05)
-    parser.add_argument("--ablation", type=str, default=None, choices=[None, "ecg", "labs"], help="Modality to ablate: 'ecg' or 'labs'")
+    parser.add_argument("--ablate_mode", type=str, default=None, choices=[None, "ecg", "labs"], help="Modality to ablate: 'ecg' or 'labs'")
 
     # --- LLRD & Unfreezing ---
     parser.add_argument(
