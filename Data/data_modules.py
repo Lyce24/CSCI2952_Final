@@ -884,3 +884,277 @@ class SymileMIMICDataModuleV2(pl.LightningDataModule):
             drop_last=False,
             persistent_workers=self.num_workers > 0,
         )
+
+import lightning as pl
+from Data.create_datasets import ChestXrayDataset
+from torchvision import transforms as T
+import pandas as pd
+from torch.utils.data import DataLoader
+import random
+import numpy as np
+
+class LowDataCXRDataModule(pl.LightningDataModule):
+    def __init__(self, train_csv, val_csv, root_dir, test_csv=None,
+                 batch_size=64, num_workers=4, image_size=224, task="MAE",
+                 subset_fraction=1.0, seed=42):
+        """
+        Args:
+            subset_fraction (float): Percentage of training data to use (0.0 to 1.0).
+                                     Default is 1.0 (100% data).
+            seed (int): Random seed for reproducible subsampling.
+        """
+        super().__init__()
+        self.train_csv = train_csv
+        self.val_csv = val_csv
+        self.root_dir = root_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.image_size = image_size
+        
+        # Low Data Settings
+        self.subset_fraction = subset_fraction
+        self.seed = seed
+        
+        self.train_df = pd.read_csv(train_csv)
+        self.val_df = pd.read_csv(val_csv)
+
+        self.task = task
+        
+        if self.task != "MAE":
+            self.test_csv = test_csv
+            self.test_df = pd.read_csv(test_csv)
+
+        # Transforms
+        self.mae_train = T.Compose([
+            T.RandomResizedCrop(self.image_size, scale=(0.5, 1.0)),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.sl_train = T.Compose([
+            T.Resize((self.image_size, self.image_size)),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        self.val_transform = T.Compose([
+            T.Resize((self.image_size, self.image_size)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    def _get_stratified_subset(self, df, labels):
+        """
+        Creates a subset of the dataframe based on self.subset_fraction.
+        Ensures at least one positive sample for every label exists in the subset.
+        """
+        # Return full dataset if fraction is 100%
+        if self.subset_fraction >= 1.0:
+            return df
+
+        # Set seed for reproducibility
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+
+        n_total = len(df)
+        n_subset = int(n_total * self.subset_fraction)
+        
+        # Handle edge case where subset is too small
+        if n_subset < len(labels):
+            n_subset = len(labels) + 1
+
+        selected_indices = set()
+
+        # 1. Guarantee at least 1 positive sample for each label
+        if labels: # Only if labels are provided (not MAE)
+            for label in labels:
+                # Assuming labels are columns with 0/1 or True/False
+                if label in df.columns:
+                    pos_rows = df[df[label] == 1].index.tolist()
+                    if pos_rows:
+                        # Pick one random positive sample
+                        selected = random.choice(pos_rows)
+                        selected_indices.add(selected)
+
+        # 2. Fill the remaining quota randomly from the rest of the dataset
+        num_selected = len(selected_indices)
+        remaining_slots = n_subset - num_selected
+
+        if remaining_slots > 0:
+            all_indices = set(df.index.tolist())
+            # Exclude already selected indices to avoid duplicates
+            candidates = list(all_indices - selected_indices)
+            
+            if len(candidates) >= remaining_slots:
+                random_extras = random.sample(candidates, remaining_slots)
+                selected_indices.update(random_extras)
+            else:
+                # If we asked for more data than exists (unlikely in this logic branch), take all
+                selected_indices.update(candidates)
+
+        # Return the subset dataframe
+        print(f"Low-Data Experiment: Using {len(selected_indices)}/{n_total} samples ({self.subset_fraction*100}%).")
+        return df.loc[list(selected_indices)].reset_index(drop=True)
+
+    def setup(self, stage=None):
+        # We define the labels locally for each task so we can pass them to the subsampler
+        
+        task_labels = []
+        path_idx = "Path" # default
+        
+        # --- Define Task Specific Configs ---
+        if self.task == "MAE":
+            task_labels = []
+            path_idx = "Path"
+            
+        elif self.task == "COVID":
+            task_labels = ["Label"]
+            path_idx = "Path"
+            
+        elif self.task == "NIH":
+            task_labels = [
+                'Hernia', 'Pneumothorax', 'Nodule', 'Edema', 'Effusion', 
+                'Pleural_Thickening', 'Cardiomegaly', 'Mass', 'Fibrosis', 
+                'Consolidation', 'Pneumonia', 'Infiltration', 'Emphysema', 'Atelectasis'
+            ]
+            path_idx = "Image Index"
+
+        elif self.task == "PNE":
+            task_labels = ['Pneumonia']
+            path_idx = "Path"
+            
+        elif self.task == "COVIDQU":
+            task_labels = ['Label']
+            path_idx = "Path"
+            
+        elif self.task == "VINDR":
+            task_labels = [
+                'Pneumothorax', 'Atelectasis', 'Mediastinal shift', 'Consolidation', 
+                'Lung tumor', 'ILD', 'Calcification', 'Infiltration', 'Other lesion', 
+                'Nodule/Mass', 'Pneumonia', 'Tuberculosis', 'Lung Opacity', 'Pleural effusion', 
+                'Pleural thickening', 'Pulmonary fibrosis', 'Cardiomegaly', 'Aortic enlargement', 'Other diseases'
+            ]
+            path_idx = "image_id"
+            
+        elif self.task == "TB":
+            task_labels = ['Label']
+            path_idx = "Path"
+            
+        elif self.task == "CHESTX6":
+            task_labels = ["Covid-19","Emphysema","Normal","Pneumonia-Bacterial","Pneumonia-Viral","Tuberculosis"]
+            path_idx = "Path"
+            
+        elif self.task == "ECHO":
+            task_labels = ["slvh","dlv","heart_transplant","lung_transplant","pacemaker_or_icd"]
+            path_idx = "cxr_filename"
+            
+        elif self.task == "chexchonet":
+            task_labels = ['composite_slvh_dlv']
+            path_idx = "cxr_filename"
+            
+        elif self.task == "MEDMOD-PHYS":
+            task_labels = [
+                "Acute and unspecified renal failure", "Acute cerebrovascular disease", "Acute myocardial infarction", "Cardiac dysrhythmias",
+                "Chronic kidney disease", "Chronic obstructive pulmonary disease and bronchiectasis", "Complications of surgical procedures or medical care",
+                "Conduction disorders", "Congestive heart failure; nonhypertensive", "Coronary atherosclerosis and other heart disease",
+                "Diabetes mellitus with complications", "Diabetes mellitus without complication", "Disorders of lipid metabolism",
+                "Essential hypertension", "Fluid and electrolyte disorders",
+                "Gastrointestinal hemorrhage", "Hypertension with complications and secondary hypertension",
+                "Other liver diseases", "Other lower respiratory disease", "Other upper respiratory disease",
+                "Pleurisy; pneumothorax; pulmonary collapse", "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)", "Respiratory failure; insufficiency; arrest (adult)",
+                "Septicemia (except in labor)", "Shock"
+            ]
+            path_idx = "cxr_path"
+            
+        elif self.task == "MEDMOD-MORT":
+            task_labels = ["mortality_inunit","mortality","mortality_inhospital"]
+            path_idx = "cxr_path"
+            
+        else:
+            raise ValueError(f"Unsupported task: {self.task}")
+
+        # --- Apply Low Data Logic ---
+        # We assume self.train_df is what needs subsampling. 
+        # Val/Test are kept full for consistent evaluation.
+        train_df_subset = self._get_stratified_subset(self.train_df, task_labels)
+        
+        # --- Instantiate Datasets ---
+        # Determine root directory logic (some use /train, some use /images)
+        if self.task in ["MAE", "VINDR", "ECHO"]:
+            train_dir = self.root_dir + "/train"
+            val_dir = self.root_dir + "/valid" if self.task == "MAE" else self.root_dir + "/val" # Handle inconsistent naming
+            if self.task == "VINDR": val_dir = self.root_dir + "/train" # Vindr split is often in csv but same folder
+        elif self.task in ["CHESTX6"]:
+             train_dir = self.root_dir
+             val_dir = self.root_dir
+        else:
+            # Standard structure for NIH, COVID, etc.
+            train_dir = self.root_dir + "/images"
+            val_dir = self.root_dir + "/images"
+
+        self.train_dataset = ChestXrayDataset(
+            df=train_df_subset,
+            root_dir=train_dir,
+            transform=self.mae_train if self.task == "MAE" else self.sl_train,
+            labels=task_labels,
+            path_index=path_idx
+        )
+        
+        self.val_dataset = ChestXrayDataset(
+            df=self.val_df,
+            root_dir=val_dir,
+            transform=self.val_transform,
+            labels=task_labels,
+            path_index=path_idx
+        )
+        
+        if self.task != "MAE":
+             # Test Dir Logic
+            if self.task in ["VINDR", "ECHO", "MEDMOD-PHYS", "MEDMOD-MORT"]:
+                 test_dir = self.root_dir + "/test" if self.task != "MEDMOD-PHYS" else self.root_dir + "/test/"
+            elif self.task in ["CHESTX6"]:
+                 test_dir = self.root_dir
+            else:
+                 test_dir = self.root_dir + "/images"
+
+            self.test_dataset = ChestXrayDataset(
+                df=self.test_df,
+                root_dir=test_dir,
+                transform=self.val_transform,
+                labels=task_labels,
+                path_index=path_idx
+            )
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            persistent_workers=True,
+            pin_memory=True
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+            persistent_workers=True,
+            pin_memory=True
+        )
+
+    def test_dataloader(self):
+        if self.task == "MAE":
+            return
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+            persistent_workers=True,
+            pin_memory=True
+        )
