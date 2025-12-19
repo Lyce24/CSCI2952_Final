@@ -75,7 +75,8 @@ def train_model(
     # Initialize Model with new LLRD args
     model = CrossModalCXRDistillation(
         mae_checkpoint_path=args.mae_checkpoint,
-        ablation=args.ablate_mode,
+        ablate_mode=args.ablate_mode,
+        ablate_loss=args.ablate_loss,
         # Modalities Dimensions
         cxr_dim=768,
         ecg_dim=1024,
@@ -196,6 +197,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.05)
     parser.add_argument("--ablate_mode", type=str, default=None, choices=[None, "ecg", "labs"], help="Modality to ablate: 'ecg' or 'labs'")
+    parser.add_argument("--ablate_loss", type=str, default=None, choices=[None, "clip", "reg"], help="Loss to ablate: 'clip' or 'reg'")
 
     # --- LLRD & Unfreezing ---
     parser.add_argument(

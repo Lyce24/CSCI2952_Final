@@ -176,7 +176,8 @@ class CrossModalCXRDistillation(pl.LightningModule):
         self,
         # Encoders
         mae_checkpoint_path: str,
-        ablation: Optional[str], # None, "ecg", "labs"
+        ablate_mode: Optional[str], # None, "ecg", "labs"
+        ablate_loss: Optional[str], # None, "clip", "reg"
 
         # Dimensions
         cxr_dim: int = 768,
@@ -224,13 +225,13 @@ class CrossModalCXRDistillation(pl.LightningModule):
 
         self._apply_tuning_strategy()
 
-        self.ablation = ablation
+        self.ablate_mode = ablate_mode
         self.use_ecg = True
         self.use_labs = True
-        if self.ablation:
-            if self.ablation == "ecg":
+        if self.ablate_mode:
+            if self.ablate_mode == "ecg":
                 self.use_ecg = False
-            elif self.ablation == "labs":
+            elif self.ablate_mode == "labs":
                 self.use_labs = False
                 self._val_labs_updated = False
 
@@ -245,14 +246,24 @@ class CrossModalCXRDistillation(pl.LightningModule):
         self.cxr_to_labs = ProjectionHead(cxr_dim, labs_dim)
         
         # ---- Loss Module ----
+        self.clip_weight = clip_weight
+        self.reg_weight = regression_weight
+        if ablate_loss:
+            if ablate_loss == "clip":
+                self.clip_weight = 0.0
+            elif self.ablate_loss == "reg":
+                self.reg_weight = 0.0
+
         self.loss_module = CLIPRegressionLoss(
-            clip_weight=clip_weight,
-            regression_weight=regression_weight,
+            clip_weight=self.clip_weight,
+            regression_weight=self.reg_weight,
             temperature=temperature,
             label_smoothing=label_smoothing,
             use_ecg=self.use_ecg,
             use_labs=self.use_labs,
         )
+
+
 
         self.val_cos_ecg = CosineSimilarity(reduction='mean')
         self.val_cos_labs = CosineSimilarity(reduction='mean')
