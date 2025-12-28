@@ -1,5 +1,5 @@
 from Data.data_modules import CXRDataModule
-from Modules.sl_lit import ClassificationLightningModule
+from Modules.cl_lit import ClassificationLightningModule
 
 import argparse
 import time
@@ -108,7 +108,7 @@ def main(args):
     probe_mode = "ft" if args.unfreeze_backbone else "lp"  # linear probe vs fine-tune
 
     run_name = (
-        f"sl_{args.task.lower()}_{args.mode}_{probe_mode}"
+        f"cl_{args.task.lower()}_{args.mode}_{probe_mode}"
         f"_bs{args.batch_size}"
         f"_lr{args.lr}"
         f"_wd{args.weight_decay}"
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="../../scratch/model_checkpoints/sl_cxr",
+        default="../../scratch/model_checkpoints/cl_cxr",
     )
     
     parser.add_argument("--seed", type=int, default=42)

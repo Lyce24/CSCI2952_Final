@@ -1,5 +1,5 @@
 from Data.data_modules import LowDataCXRDataModule
-from Modules.sl_lit import ClassificationLightningModule
+from Modules.cl_lit import ClassificationLightningModule
 
 import argparse
 import time
@@ -102,6 +102,20 @@ def main(args):
         class_names = ["Covid-19","Emphysema","Normal","Pneumonia-Bacterial","Pneumonia-Viral","Tuberculosis"]
         num_classes = len(class_names)
         task_type = "multiclass"
+    elif args.task == "MEDMOD-PHYS":
+        class_names = [
+            "Acute and unspecified renal failure", "Acute cerebrovascular disease", "Acute myocardial infarction", "Cardiac dysrhythmias",
+            "Chronic kidney disease", "Chronic obstructive pulmonary disease and bronchiectasis", "Complications of surgical procedures or medical care",
+            "Conduction disorders", "Congestive heart failure; nonhypertensive", "Coronary atherosclerosis and other heart disease",
+            "Diabetes mellitus with complications", "Diabetes mellitus without complication", "Disorders of lipid metabolism",
+            "Essential hypertension", "Fluid and electrolyte disorders",
+            "Gastrointestinal hemorrhage", "Hypertension with complications and secondary hypertension",
+            "Other liver diseases", "Other lower respiratory disease", "Other upper respiratory disease",
+            "Pleurisy; pneumothorax; pulmonary collapse", "Pneumonia (except that caused by tuberculosis or sexually transmitted disease)", "Respiratory failure; insufficiency; arrest (adult)",
+            "Septicemia (except in labor)", "Shock"
+        ]
+        num_classes = len(class_names)
+        task_type = "multilabel"
     else:
         raise ValueError(f"Unsupported task: {args.task}")
 
@@ -114,7 +128,7 @@ def main(args):
     pct_str = f"{int(args.subset_fraction * 100)}pct"
     
     run_name = (
-        f"sl_{args.task.lower()}_{args.mode}_{probe_mode}"
+        f"cl_{args.task.lower()}_{args.mode}_{probe_mode}"
         f"_bs{args.batch_size}"
         f"_lr{args.lr}"
         f"_wd{args.weight_decay}"
@@ -245,7 +259,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="../../scratch/model_checkpoints/sl_cxr",
+        default="../../scratch/model_checkpoints/cl_cxr",
     )
     
     parser.add_argument("--seed", type=int, default=42)
