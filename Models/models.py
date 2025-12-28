@@ -131,7 +131,7 @@ class MIMICCXREncoder(nn.Module):
 
     def forward(self, x):
         """
-        Args:
+        Args:dd
             x (torch.Tensor): CXR data (batch_sz, 3, 320, 320).
         Returns:
             x (torch.Tensor): learned CXR representation (batch_sz, d)
@@ -148,6 +148,7 @@ class CXRModel(nn.Module):
         backbone_name: str = "vit_base_patch16_224",
         model_checkpoints: str | None = None,
         unfreeze_backbone: bool = False,
+        mae_path: str = "../../scratch/checkpoints/mae/last.ckpt",
         task: str = "sl", # sl, seg
     ):
         super().__init__()
@@ -156,6 +157,7 @@ class CXRModel(nn.Module):
         self.mode = mode
         self.backbone_name = backbone_name
         self.model_checkpoints = model_checkpoints
+        self.mae_path = mae_path
         self.task = task
         self.backbone = self._build_backbone()
         self.h = 224 // 16   # hardcoded for 224 and patch_size=16
@@ -268,9 +270,12 @@ class CXRModel(nn.Module):
             print("Missing keys:", missing)
             print("Unexpected keys:", unexpected)
         elif self.mode == "pacx":
+            if self.mae_path is None:
+                raise ValueError("PaCX-MAE requires path to MAE model weights.")
+
             from peft import LoraConfig, get_peft_model
             base = MAECXREncoder(embed_dim=768, depth=12, num_heads=12)
-            base.load_state_dict(torch.load("/users/mspancho/Downloads/Final_PACX_MAE.ckpt", map_location="cpu"), strict=False)
+            base.load_state_dict(torch.load(self.mae_path, map_location="cpu"), strict=False)
 
             lora_cfg = LoraConfig(
                 r=8, lora_alpha=16, lora_dropout=0.1,
