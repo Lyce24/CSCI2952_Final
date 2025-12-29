@@ -78,7 +78,7 @@ PaCX-MAE consistently outperforms baselines on physiology-dependent tasks while 
 <img src="./Figs/low_data_efficiency_plot.png" alt="Label Efficiency Graph" width="600"/>
 </p>
 
-In the 1% data regime, PaCX-MAE consistently surpasses the MAE baseline, showing AUROC improvements of ~8% on CheXchoNet and ~4% on VinDr and NIH.
+In the 1% data regime, PaCX-MAE consistently surpasses the MAE baseline, showing AUROC improvements of ~8% on CheXchoNet and ~5% on VinDr and NIH.
 
 ### Interpretability
 
@@ -111,6 +111,17 @@ Stage3_{task}.py             # CLIs for Alignment, Low-Data, Seg, Classification
 PaCX-MAE.pdf                 # Final Report for PaCX-MAE
 ```
 
+## ⚖️ Model Weights
+We have pretrained model weights available for:
+
+- MAE Backbone (Vision Encoder)
+
+- PaCX-MAE (Physiology-Augmented Vision Encoder)
+
+- Lab DAE (Laboratory Denoising Autoencoder)
+
+Please contact the corresponding author for access to these weights.
+
 ## 📌 Requirements
 
 **Option 1: Conda (Recommended)**
@@ -131,5 +142,4 @@ pip install -r ./Env/requirements.txt
 ## 📬 Contact
 
 For questions or collaboration inquiries, please contact:\
-**Yancheng Liu** – yancheng_liu@brown.edu \
-**Project Link:** [GitHub Repository](https://github.com/Lyce24/PACX-MAE/)
+**Yancheng Liu** – yancheng_liu@brown.edu
