@@ -6,7 +6,7 @@
 
 ## 🧬 Overview
 
-**PaCX-MAE** is a cross-modal distillation framework that injects physiological priors into chest X-ray (CXR) encoders while remaining strictly unimodal at inference. The model bridges the gap between multimodal training and unimodal deployment, allowing a vision encoder to "hallucinate" physiological context (such as cardiac electrical activity or fluid status) from anatomical data alone.
+**PaCX-MAE** is a cross-modal distillation framework that injects physiological priors into chest X-ray (CXR) encoders while remaining strictly unimodal at inference. The model bridges the gap between multimodal training and unimodal deployment, allowing a vision encoder to infer physiological context (such as cardiac electrical activity or fluid status) from anatomical data alone.
 
 The framework utilizes:
 
@@ -14,13 +14,25 @@ The framework utilizes:
 * **Cross-Modal Distillation** to align visual features with physiological signals (ECG and Lab values).
 * **Dual Contrastive-Predictive Objective** to enforce both global semantic alignment and dense feature reconstruction.
 
+## 🏗️ Architecture
+
+<p align="center">
+<img src="./Figs/ssl (2).png" alt="PaCX-MAE Architecture Overview" width="800"/>
+</p>
+
+The architecture consists of three stages:
+
+1. **Stage 1 (Unimodal Pretraining):** A ViT-B vision backbone is pretrained with Masked Autoencoding (90% masking) to learn anatomical semantics.
+2. **Stage 2 (Cross-Modal Distillation):** The CXR encoder is aligned with frozen physiological targets (**ECGFounder** for ECG, **DAE** for Labs) using a dual contrastive-predictive objective and LoRA adapters.
+3. **Stage 3 (Inference):** A strictly unimodal execution where the CXR encoder predicts downstream tasks using the internalized physiological priors.
+
 ## 🔍 Key Features
 
 * 🧠 **Physiological Distillation:** Distills dense signals (ECG waveforms, Lab values) into CXR representations.
 * 🔄 **Two-Stage Curriculum:** Decouples representation learning (Stage 1: Unimodal MAE) from cross-modal alignment (Stage 2: Distillation) to prevent catastrophic forgetting.
 * 🧩 **Parameter-Efficient Adaptation (LoRA):** Uses Low-Rank Adaptation to bridge the modality gap while keeping the core visual manifold stable.
 * 🎯 **Dual Objective:** Combines **InfoNCE contrastive loss** for global alignment and **Cosine Distance regression** for reconstructing dense physiological embeddings.
-* 📈 **Superior Performance:** Outperforms domain-specific MAE on physiology-heavy benchmarks (e.g., +2.7% AUROC on MedMod, +6.5% F1 on VinDr-CXR).
+* 📈 **Superior Performance:** Outperforms domain-specific MAE on physiology-heavy benchmarks (e.g., +2.7 AUROC on MedMod, +6.5 F1 on VinDr-CXR).
 * 📉 **Label Efficiency:** Achieves robust generalization in low-data regimes (1% training data), significantly surpassing baselines.
 * 👁️ **Interpretability:** Attention Rollout confirms the model focuses on relevant physiological indicators, such as the cardiac silhouette.
 
@@ -34,21 +46,9 @@ The framework utilizes:
 **Evaluation Benchmarks:**
 PaCX-MAE is evaluated on 9 public benchmarks covering various tasks:
 
-* **Physiology-Dense:** CheXchoNet (Fluid Overload), VinDr-CXR, MedMod.
+* **Physiology-Dense:** CheXchoNet, VinDr-CXR, MedMod.
 * **Structural/Segmentation:** CXL-Seg, COVID-QU-Ex.
 * **Classification:** TB, ChestX6, NIH-14, QaTa-COV19.
-
-## 🏗️ Architecture
-
-<p align="center">
-<img src="./Figs/ssl (2).png" alt="PaCX-MAE Architecture Overview" width="800"/>
-</p>
-
-The architecture consists of three stages:
-
-1. **Stage 1 (Unimodal Pretraining):** A ViT-B vision backbone is pretrained with Masked Autoencoding (90% masking) to learn anatomical semantics.
-2. **Stage 2 (Cross-Modal Distillation):** The CXR encoder is aligned with frozen physiological targets (**ECGFounder** for ECG, **DAE** for Labs) using a dual contrastive-predictive objective and LoRA adapters.
-3. **Stage 3 (Inference):** A strictly unimodal execution where the CXR encoder predicts downstream tasks using the internalized physiological priors.
 
 ## ⚙️ Training Objective
 
@@ -78,7 +78,7 @@ PaCX-MAE consistently outperforms baselines on physiology-dependent tasks while 
 <img src="./Figs/low_data_efficiency_plot.png" alt="Label Efficiency Graph" width="600"/>
 </p>
 
-In the 1% data regime, PaCX-MAE consistently surpasses the MAE baseline, showing AUROC improvements of ~8% on CheXchoNet and ~5% on VinDr and NIH.
+In the 1% data regime, PaCX-MAE consistently surpasses the MAE baseline, showing AUROC improvements of ~8pp on CheXchoNet and ~5pp on VinDr and NIH.
 
 ### Interpretability
 
